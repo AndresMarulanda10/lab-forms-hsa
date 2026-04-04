@@ -7,18 +7,25 @@ export type Database = {
         Row: Nevera;
         Insert: NeveraInsert;
         Update: Partial<NeveraInsert>;
+        Relationships: never[];
       };
       registros_termohigrometria: {
         Row: RegistroTermohigrometria;
         Insert: RegistroTermohigrometriaInsert;
         Update: Partial<RegistroTermohigrometriaInsert>;
+        Relationships: never[];
       };
       registros_neveras: {
         Row: RegistroNevera;
         Insert: RegistroNeveraInsert;
         Update: Partial<RegistroNeveraInsert>;
+        Relationships: never[];
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 };
 

@@ -118,9 +118,9 @@ export default function NeveraChart({
       M: valorDeLectura(eM),
       T: valorDeLectura(eT),
       N: valorDeLectura(eN),
-      auditM: esLecturaAuditada(eM) ? eM : null,
-      auditT: esLecturaAuditada(eT) ? eT : null,
-      auditN: esLecturaAuditada(eN) ? eN : null,
+      auditM: eM != null && esLecturaAuditada(eM) ? eM : null,
+      auditT: eT != null && esLecturaAuditada(eT) ? eT : null,
+      auditN: eN != null && esLecturaAuditada(eN) ? eN : null,
     };
   });
 

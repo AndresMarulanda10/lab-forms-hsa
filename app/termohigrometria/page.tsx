@@ -157,7 +157,7 @@ export default function TermohigrometriaPage() {
 
     // Construir historial previo si el día ya tenía datos
     const entryExistente = lecturas[clave];
-    const prevEntry: LecturaDiaTermohigro["prev"][0] | null =
+    const prevEntry: NonNullable<LecturaDiaTermohigro["prev"]>[number] | null =
       (entryExistente?.temp != null || entryExistente?.hum != null)
         ? {
             temp:  entryExistente.temp,
