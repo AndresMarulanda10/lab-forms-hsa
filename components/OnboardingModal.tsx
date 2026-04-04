@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Thermometer, Refrigerator, ChevronRight, ChevronLeft,
-  X, BarChart2, Save, Printer, Check,
+  X, BarChart2, Printer, Check, PenLine,
 } from "lucide-react";
 
 // ─── Definición de slides ─────────────────────────────────────────────────────
@@ -13,26 +13,40 @@ interface Slide {
   title: string;
   body: string;
   visual: React.ReactNode;
-  color: string;
   bg: string;
 }
 
-const DOT_DEMO = (
-  <div className="flex items-end justify-center gap-2 h-20 mt-2">
-    {[18, 22, null, 25, 14, 28, 31, 24, null, 20].map((v, i) => {
-      if (v === null) return <div key={i} className="w-3" />;
-      const ok = v >= 15 && v <= 30;
-      return (
-        <div key={i} className="flex flex-col items-center gap-1">
-          <span className={`text-[9px] font-bold ${ok ? "text-green-600" : "text-red-500"}`}>
-            {v}°
-          </span>
-          <div
-            className={`w-3 h-3 rounded-full border-2 border-white shadow-md ${ok ? "bg-amber-400" : "bg-red-500 ring-4 ring-red-200"}`}
-          />
+// ── Visuales reutilizables ────────────────────────────────────────────────────
+
+const CHART_DEMO = (
+  <div className="flex flex-col gap-1.5 mt-3">
+    {[
+      { label: "Mañana", color: "#006b3c", values: [22, 21, 23, 22, 21] },
+      { label: "Tarde",  color: "#d97706", values: [24, 25, 26, 24, 28] },
+      { label: "Noche",  color: "#4338ca", values: [20, 21, 19, 21, 20] },
+    ].map(({ label, color, values }) => (
+      <div key={label} className="flex items-center gap-2">
+        <span className="text-[9px] w-12 text-right font-semibold text-white/80">{label}</span>
+        <div className="flex items-end gap-1 h-8">
+          {values.map((v, i) => {
+            const outOfRange = v > 27;
+            return (
+              <div key={i} className="flex flex-col items-center justify-end h-full">
+                <div
+                  className={`w-2 rounded-full ${outOfRange ? "ring-2 ring-red-300 bg-red-500" : ""}`}
+                  style={{
+                    height: `${((v - 18) / 12) * 28}px`,
+                    backgroundColor: outOfRange ? "#ef4444" : color,
+                    opacity: 0.85,
+                  }}
+                />
+              </div>
+            );
+          })}
         </div>
-      );
-    })}
+        <span className="text-[8px] text-white/50">{values[values.length - 1].toFixed(1)}°</span>
+      </div>
+    ))}
   </div>
 );
 
@@ -45,27 +59,16 @@ const TABLE_DEMO = (
     </div>
     {[
       [1, "22.1°", "23.4°", "21.8°"],
-      [2, "—", "24.0°", "22.5°"],
-      [3, "31.2°⚠️", "23.1°", "22.9°"],
+      [2, "—",     "24.0°", "22.5°"],
+      [3, "28.2°⚠️", "23.1°", "22.9°"],
     ].map(([d, m, t, n]) => (
-      <div key={d} className="grid grid-cols-4 text-center border-t border-gray-50">
+      <div key={String(d)} className="grid grid-cols-4 text-center border-t border-gray-50">
         <div className="py-1 font-bold text-gray-600">{d}</div>
         <div className={`py-1 ${String(m).includes("⚠️") ? "text-red-500 font-bold" : "text-gray-700"}`}>{m}</div>
         <div className="py-1 text-gray-700">{t}</div>
         <div className="py-1 text-gray-700">{n}</div>
       </div>
     ))}
-  </div>
-);
-
-const SAVE_DEMO = (
-  <div className="flex items-center justify-center gap-3 mt-4">
-    <div className="flex items-center gap-2 px-3 py-2 bg-hsa-green text-white rounded-xl text-xs font-semibold shadow-md">
-      <Save size={13} /> Guardar
-    </div>
-    <div className="flex items-center gap-2 px-3 py-2 bg-hsa-green text-white rounded-xl text-xs font-semibold shadow-md">
-      <Printer size={13} /> Imprimir
-    </div>
   </div>
 );
 
@@ -92,53 +95,70 @@ const FRIDGE_DEMO = (
   </div>
 );
 
+const FIRMA_DEMO = (
+  <div className="flex justify-center gap-3 mt-3">
+    <div className="flex flex-col items-center gap-1.5 px-3 py-2 bg-white/15 rounded-xl">
+      <PenLine size={13} className="text-green-100"/>
+      <span className="text-[9px] text-green-100 font-semibold text-center leading-tight">Firmar y<br/>agregar</span>
+      <span className="text-[8px] text-green-200">por lectura</span>
+    </div>
+    <div className="flex flex-col items-center gap-1.5 px-3 py-2 bg-white/15 rounded-xl">
+      <PenLine size={13} className="text-green-100"/>
+      <span className="text-[9px] text-green-100 font-semibold text-center leading-tight">Guardar<br/>mes</span>
+      <span className="text-[8px] text-green-200">cierre mensual</span>
+    </div>
+    <div className="flex flex-col items-center gap-1.5 px-3 py-2 bg-white/15 rounded-xl">
+      <Printer size={13} className="text-green-100"/>
+      <span className="text-[9px] text-green-100 font-semibold text-center leading-tight">Imprimir<br/>PDF</span>
+      <span className="text-[8px] text-green-200">institucional</span>
+    </div>
+  </div>
+);
+
+// ── Construcción de slides por modo ───────────────────────────────────────────
+
 function buildSlides(modo: "termohigrometria" | "neveras"): Slide[] {
   return [
     {
-      icon: <Thermometer size={28} className="text-white" />,
-      color: "text-hsa-green",
+      icon: modo === "termohigrometria"
+        ? <Thermometer size={28} className="text-white"/>
+        : <Refrigerator size={28} className="text-white"/>,
       bg: "bg-hsa-green",
       title: modo === "termohigrometria"
         ? "Registro de Termohigrometría"
         : "Control de Neveras — Cadena de Frío",
       body: modo === "termohigrometria"
-        ? "Esta pantalla reemplaza el formulario físico F-021. Registrá temperatura y humedad del ambiente tres veces por día: mañana, tarde y noche."
-        : "Esta pantalla reemplaza el formulario F-029. Registrá la temperatura de cada nevera en las tres jornadas del día.",
+        ? "Esta pantalla reemplaza el formulario físico F-021. Registrá temperatura y humedad del ambiente en tres jornadas: Mañana, Tarde y Noche. Cada lectura queda firmada y trazable."
+        : "Esta pantalla reemplaza el formulario F-029. Registrá la temperatura de cada nevera en las tres jornadas del día. Cada lectura queda firmada y trazable.",
       visual: modo === "neveras" ? FRIDGE_DEMO : MONTH_DEMO,
     },
     {
-      icon: <BarChart2 size={28} className="text-white" />,
-      color: "text-hsa-green",
+      icon: <BarChart2 size={28} className="text-white"/>,
       bg: "bg-hsa-green",
       title: "Navegación por mes",
-      body: "Usá las flechas para moverse entre meses. Los datos de cada mes se guardan por separado. El mes actual carga automáticamente.",
+      body: "Usá las flechas para moverte entre meses. Los datos de cada mes se guardan por separado. El mes actual carga automáticamente al entrar.",
       visual: MONTH_DEMO,
     },
     {
-      icon: modo === "termohigrometria"
-        ? <Thermometer size={28} className="text-white" />
-        : <Refrigerator size={28} className="text-white" />,
-      color: "text-amber-600",
+      icon: <PenLine size={28} className="text-white"/>,
       bg: "bg-amber-500",
-      title: "Cómo ingresar lecturas",
-      body: "En la tabla encontrás una fila por día. Cada columna es una jornada (M/T/N). Escribí el valor numérico y presioná Tab o Enter para avanzar. Los valores fuera de rango se marcan en rojo automáticamente.",
+      title: "Firmar y agregar lecturas",
+      body: "Seleccioná la jornada, escribí el día y el valor. Al presionar «Firmar y agregar» se solicita tu firma y el dato se guarda automáticamente en la base de datos con trazabilidad completa.",
       visual: TABLE_DEMO,
     },
     {
-      icon: <BarChart2 size={28} className="text-white" />,
-      color: "text-violet-600",
+      icon: <BarChart2 size={28} className="text-white"/>,
       bg: "bg-violet-500",
-      title: "Gráfica interactiva",
-      body: "Cada punto representa una lectura. La banda verde muestra el rango aceptable. Los puntos rojos con halo indican valores fuera de rango. Pasá el mouse sobre un punto para ver el detalle.",
-      visual: DOT_DEMO,
+      title: "Gráfica con tres jornadas",
+      body: "Mañana en verde, Tarde en ámbar y Noche en índigo — cada jornada tiene su propia línea. Los valores en el eje Y incluyen decimales. Los puntos rojos indican lecturas fuera del rango aceptable.",
+      visual: CHART_DEMO,
     },
     {
-      icon: <Save size={28} className="text-white" />,
-      color: "text-hsa-green",
+      icon: <Printer size={28} className="text-white"/>,
       bg: "bg-hsa-green",
-      title: "Guardar e imprimir",
-      body: "Hacé clic en Guardar para registrar todos los datos en la base de datos. Usá Imprimir para generar el PDF institucional con el formato oficial del hospital.",
-      visual: SAVE_DEMO,
+      title: "Guardar mes e imprimir",
+      body: "Cada lectura se guarda automáticamente al firmarla. «Guardar mes» registra los metadatos del formulario y la firma mensual. Usá Imprimir para generar el PDF institucional del hospital.",
+      visual: FIRMA_DEMO,
     },
   ];
 }
@@ -206,12 +226,12 @@ export default function OnboardingModal({ modo, storageKey }: Props) {
             {s.icon}
           </div>
           <h2 className="text-white font-bold text-lg leading-tight">{s.title}</h2>
+          {s.visual}
         </div>
 
         {/* Contenido */}
         <div className="px-6 pt-5 pb-2">
           <p className="text-gray-600 text-sm leading-relaxed text-center">{s.body}</p>
-          {s.visual}
         </div>
 
         {/* Dots progress */}

@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   X, ChevronRight, ChevronLeft, Check,
   Thermometer, Refrigerator,
-  Printer, BarChart2, PenLine, Settings, Plus,
+  Printer, BarChart2, PenLine, Settings,
 } from "lucide-react";
 
 // ─── Slides de ayuda general ─────────────────────────────────────────────────
@@ -34,15 +34,18 @@ const SLIDES = [
   },
   {
     bg: "bg-amber-500",
-    icon: <Plus size={26} className="text-white"/>,
-    title: "Ingresar lecturas",
-    body: "Escribí el día y el valor de temperatura (y humedad en F-021), luego presioná Enter o el botón Agregar. Usá 🧪 Prueba para cargar datos de ejemplo y ver las gráficas de inmediato.",
+    icon: <PenLine size={26} className="text-white"/>,
+    title: "Firmar y agregar lecturas",
+    body: "Seleccioná la jornada (Mañana, Tarde o Noche), escribí el día y el valor. Al presionar «Firmar y agregar», se te pide tu firma y el dato se guarda automáticamente. Cada lectura queda trazable con responsable, hora y firma.",
     visual: (
-      <div className="flex justify-center mt-4">
+      <div className="flex flex-col items-center gap-2 mt-3">
         <div className="flex items-center gap-2 px-3 py-2 bg-white/20 rounded-xl text-white text-xs font-semibold">
           <span className="bg-white/30 px-2 py-0.5 rounded-lg text-[11px]">Día 15</span>
           <span className="bg-white/30 px-2 py-0.5 rounded-lg text-[11px]">5.2°C</span>
           <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-[10px] font-bold">🧪 Prueba</span>
+        </div>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 rounded-xl text-white text-[11px] font-semibold">
+          <PenLine size={11}/> Firmar y agregar
         </div>
       </div>
     ),
@@ -50,42 +53,43 @@ const SLIDES = [
   {
     bg: "bg-violet-500",
     icon: <BarChart2 size={26} className="text-white"/>,
-    title: "Gráfica interactiva",
-    body: "Ves dos líneas: lectura real (sólida) y corregida con el factor (punteada). La banda de color es el rango aceptable. Los puntos rojos indican valores fuera de rango.",
+    title: "Gráfica con tres jornadas",
+    body: "Cada jornada tiene su propia línea de color: Mañana en verde, Tarde en ámbar y Noche en índigo. El eje Y muestra valores decimales y la banda de color indica el rango aceptable. Los puntos rojos señalan lecturas fuera de rango.",
     visual: (
-      <div className="flex items-end justify-center gap-1.5 h-14 mt-3">
-        {[5, 6, 5.5, 7, 9.5, 6, 5, 4, 6, 7].map((v, i) => {
-          const ok = v >= 2 && v <= 8;
-          return (
-            <div key={i} className="flex flex-col items-center gap-0.5">
-              <div className={`w-2.5 h-2.5 rounded-full ${ok ? "bg-violet-200" : "bg-red-400 ring-2 ring-red-200"}`}/>
-            </div>
-          );
-        })}
+      <div className="flex items-center justify-center gap-4 mt-3">
+        {[
+          { label: "Mañana", color: "#006b3c" },
+          { label: "Tarde",  color: "#d97706" },
+          { label: "Noche",  color: "#4338ca" },
+        ].map(({ label, color }) => (
+          <div key={label} className="flex flex-col items-center gap-1">
+            <div className="w-6 h-1.5 rounded-full" style={{ backgroundColor: color }}/>
+            <span className="text-[9px] text-violet-100">{label}</span>
+          </div>
+        ))}
+        <div className="ml-1 flex flex-col items-center gap-1">
+          <div className="w-3 h-3 rounded-full bg-red-400 ring-2 ring-red-200"/>
+          <span className="text-[9px] text-violet-100">Fuera rango</span>
+        </div>
       </div>
     ),
   },
   {
     bg: "bg-hsa-green",
     icon: <PenLine size={26} className="text-white"/>,
-    title: "Firmar y guardar",
-    body: "Al presionar «Firmar y guardar», se abre un modal. En F-029 elegís la jornada (Mañana / Tarde / Noche). Luego dibujás tu firma con el dedo o mouse. La firma queda vinculada al registro.",
+    title: "Dos niveles de firma",
+    body: "«Firmar y agregar» registra cada lectura individualmente con tu firma. «Guardar mes» cierra el mes con la firma del responsable de jornada y guarda los metadatos del formulario.",
     visual: (
-      <div className="flex justify-center mt-3 gap-2">
-        <div className="flex flex-col items-center gap-1">
-          <div className="w-6 h-6 rounded-full bg-amber-300/70 text-[8px] flex items-center justify-center font-bold text-amber-800">M</div>
-          <span className="text-[8px] text-green-100">Mañana</span>
+      <div className="flex justify-center mt-3 gap-3">
+        <div className="flex flex-col items-center gap-1.5 px-3 py-2 bg-white/15 rounded-xl">
+          <PenLine size={13} className="text-green-100"/>
+          <span className="text-[9px] text-green-100 font-semibold text-center leading-tight">Firmar y<br/>agregar</span>
+          <span className="text-[8px] text-green-200 text-center">por lectura</span>
         </div>
-        <div className="flex flex-col items-center gap-1">
-          <div className="w-6 h-6 rounded-full bg-blue-300/70 text-[8px] flex items-center justify-center font-bold text-blue-800">T</div>
-          <span className="text-[8px] text-green-100">Tarde</span>
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <div className="w-6 h-6 rounded-full bg-indigo-300/70 text-[8px] flex items-center justify-center font-bold text-indigo-800">N</div>
-          <span className="text-[8px] text-green-100">Noche</span>
-        </div>
-        <div className="ml-2 w-24 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center">
-          <span className="text-white/60 text-[9px] italic">Firma aquí…</span>
+        <div className="flex flex-col items-center gap-1.5 px-3 py-2 bg-white/15 rounded-xl">
+          <PenLine size={13} className="text-green-100"/>
+          <span className="text-[9px] text-green-100 font-semibold text-center leading-tight">Guardar<br/>mes</span>
+          <span className="text-[8px] text-green-200 text-center">cierre mensual</span>
         </div>
       </div>
     ),
@@ -155,7 +159,7 @@ export default function HelpBubble() {
 
             {/* Header */}
             <div className={`${s.bg} px-6 pt-7 pb-5 flex flex-col items-center text-center`}>
-              <div className="w-13 h-13 w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-3">
+              <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center mb-3">
                 {s.icon}
               </div>
               <h2 className="text-white font-bold text-base leading-snug">{s.title}</h2>
