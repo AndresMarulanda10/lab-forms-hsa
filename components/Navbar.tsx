@@ -35,8 +35,10 @@ export default function Navbar() {
               const active = pathname.startsWith(href);
               return (
                 <Link key={href} href={href}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                    active ? "bg-white text-hsa-green" : "text-green-100 hover:text-white"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all ${
+                    active
+                      ? "bg-white text-hsa-green font-bold shadow-sm ring-1 ring-white/60"
+                      : "text-green-100 font-medium hover:text-white"
                   }`}
                   style={!active ? {} : undefined}
                   onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = "#004d2a"; }}

@@ -26,6 +26,9 @@ interface DataPoint {
   M: number | null;
   T: number | null;
   N: number | null;
+  M_corr: number | null;
+  T_corr: number | null;
+  N_corr: number | null;
   auditM?: string | null;
   auditT?: string | null;
   auditN?: string | null;
@@ -124,16 +127,24 @@ export default function RegistroChart({
     return raw != null ? raw : null;
   };
 
+  const hasCorr = factorCorreccion !== 0;
+
   const data: DataPoint[] = Array.from({ length: dias }, (_, i) => {
     const dia = i + 1;
     const eM = getEntry(dia, "M");
     const eT = getEntry(dia, "T");
     const eN = getEntry(dia, "N");
+    const vM = getVal(dia, "M");
+    const vT = getVal(dia, "T");
+    const vN = getVal(dia, "N");
     return {
       dia,
-      M: getVal(dia, "M"),
-      T: getVal(dia, "T"),
-      N: getVal(dia, "N"),
+      M: vM,
+      T: vT,
+      N: vN,
+      M_corr: hasCorr && vM != null ? parseFloat((vM + factorCorreccion).toFixed(2)) : null,
+      T_corr: hasCorr && vT != null ? parseFloat((vT + factorCorreccion).toFixed(2)) : null,
+      N_corr: hasCorr && vN != null ? parseFloat((vN + factorCorreccion).toFixed(2)) : null,
       auditM: eM?.ts ?? null,
       auditT: eT?.ts ?? null,
       auditN: eN?.ts ?? null,
@@ -163,6 +174,12 @@ export default function RegistroChart({
             <span style={{ color: J_COLOR[j] }} className="font-medium text-[11px]">{J_LABEL[j]}</span>
           </div>
         ))}
+        {hasCorr && (
+          <div className="flex items-center gap-1.5 ml-1">
+            <svg width="16" height="6"><line x1="0" y1="3" x2="16" y2="3" stroke="#6b7280" strokeWidth="1.5" strokeDasharray="4 2"/></svg>
+            <span className="text-gray-400 text-[11px]">Corregido ({factorCorreccion > 0 ? "+" : ""}{factorCorreccion})</span>
+          </div>
+        )}
       </div>
 
       <ResponsiveContainer width="100%" height={300}>
@@ -211,6 +228,27 @@ export default function RegistroChart({
               activeDot={{ r: 6 }}
             />
           ))}
+
+          {/* Líneas corregidas (punteadas) — solo cuando factorCorreccion ≠ 0 */}
+          {hasCorr && JORNADAS.map(j => {
+            const corrKey = `${j}_corr` as "M_corr" | "T_corr" | "N_corr";
+            return (
+              <Line
+                key={`${j}_corr`}
+                type="linear"
+                dataKey={corrKey}
+                name={`${J_LABEL[j]} corregido`}
+                stroke={J_COLOR[j]}
+                strokeWidth={1.5}
+                strokeDasharray="5 3"
+                strokeOpacity={0.55}
+                connectNulls={false}
+                dot={false}
+                activeDot={false}
+                legendType="none"
+              />
+            );
+          })}
         </LineChart>
       </ResponsiveContainer>
     </>
