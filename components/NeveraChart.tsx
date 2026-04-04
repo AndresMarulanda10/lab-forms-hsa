@@ -124,9 +124,17 @@ export default function NeveraChart({
     };
   });
 
+  // Ticks explícitos cada 0.5 °C para que siempre se vean decimales
+  const yMin = parseFloat((rangoMin - 2).toFixed(1));
+  const yMax = parseFloat((rangoMax + 2).toFixed(1));
+  const yTicks: number[] = [];
+  for (let v = yMin; v <= yMax + 0.001; v += 0.5) {
+    yTicks.push(parseFloat(v.toFixed(1)));
+  }
+
   return (
     <ResponsiveContainer width="100%" height={440}>
-      <LineChart data={data} margin={{ top: 8, right: 24, left: 0, bottom: 24 }}>
+      <LineChart data={data} margin={{ top: 8, right: 32, left: 8, bottom: 24 }}>
         <CartesianGrid strokeDasharray="2 2" stroke="#e5e7eb" />
 
         {/* Zona aceptable */}
@@ -139,10 +147,11 @@ export default function NeveraChart({
         <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#9ca3af" }} tickLine={false}
           axisLine={{ stroke: "#d1d5db" }}
           label={{ value: "Días", position: "insideBottom", offset: -10, fontSize: 10, fill: "#9ca3af" }} />
-        <YAxis domain={[rangoMin - 2, rangoMax + 2]} tickCount={12}
-          tick={{ fontSize: 10, fill: "#9ca3af" }} tickLine={false} axisLine={false}
-          tickFormatter={v => Number.isInteger(v) ? `${v}°` : `${v.toFixed(1)}°`}
-          label={{ value: "Temperatura", angle: -90, position: "insideLeft", fontSize: 10, fill: "#9ca3af", offset: 10 }} />
+        <YAxis domain={[yMin, yMax]} ticks={yTicks}
+          tick={{ fontSize: 9, fill: "#9ca3af" }} tickLine={false} axisLine={false}
+          tickFormatter={v => `${v.toFixed(1)}°`}
+          width={40}
+          label={{ value: "°C", angle: -90, position: "insideLeft", fontSize: 10, fill: "#9ca3af", offset: 10 }} />
 
         <Tooltip
           content={

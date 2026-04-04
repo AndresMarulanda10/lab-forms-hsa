@@ -143,8 +143,14 @@ export default function RegistroChart({
     };
   });
 
-  const yMin = rangoMin - 3;
-  const yMax = rangoMax + 3;
+  // Ticks explícitos: 0.5 para °C, 1 para %
+  const step = unidad === "%" ? 1 : 0.5;
+  const yMin = parseFloat((rangoMin - 3).toFixed(1));
+  const yMax = parseFloat((rangoMax + 3).toFixed(1));
+  const yTicks: number[] = [];
+  for (let v = yMin; v <= yMax + 0.001; v += step) {
+    yTicks.push(parseFloat(v.toFixed(1)));
+  }
 
   return (
     <>
@@ -160,7 +166,7 @@ export default function RegistroChart({
       </div>
 
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={data} margin={{ top: 8, right: 24, left: 0, bottom: 24 }}>
+        <LineChart data={data} margin={{ top: 8, right: 32, left: 8, bottom: 24 }}>
           <CartesianGrid strokeDasharray="2 2" stroke="#e5e7eb" />
           <ReferenceArea y1={rangoMin} y2={rangoMax} fill="#dbeafe" fillOpacity={0.35} stroke="none" />
           <ReferenceLine y={rangoMin} stroke="#3b82f6" strokeDasharray="4 2" strokeWidth={1}
@@ -170,9 +176,10 @@ export default function RegistroChart({
           <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#9ca3af" }} tickLine={false}
             axisLine={{ stroke: "#d1d5db" }}
             label={{ value: "Días", position: "insideBottom", offset: -10, fontSize: 10, fill: "#9ca3af" }} />
-          <YAxis domain={[yMin, yMax]} tickCount={10}
-            tick={{ fontSize: 10, fill: "#9ca3af" }} tickLine={false} axisLine={false}
-            tickFormatter={v => Number.isInteger(v) ? `${v}${unidad}` : `${v.toFixed(1)}${unidad}`} />
+          <YAxis domain={[yMin, yMax]} ticks={yTicks}
+            tick={{ fontSize: 9, fill: "#9ca3af" }} tickLine={false} axisLine={false}
+            tickFormatter={v => `${v.toFixed(1)}${unidad}`}
+            width={44} />
           <Tooltip
             content={
               <CustomTooltip rangoMin={rangoMin} rangoMax={rangoMax} unidad={unidad} factorCorreccion={factorCorreccion} />
