@@ -5,7 +5,7 @@ import {
   Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer,
 } from "recharts";
 import type { LecturasNevera } from "@/lib/types";
-import { getDiasEnMes } from "@/lib/types";
+import { getDiasEnMes, valorDeLectura, esLecturaAuditada, formatearTs, JORNADA_LABEL } from "@/lib/types";
 
 interface Props {
   lecturas: LecturasNevera;
@@ -20,17 +20,20 @@ interface Props {
 
 function CustomTooltip({ active, payload }: {
   active?: boolean;
-  payload?: { name: string; value: number; color: string; payload: { corregidaReal?: number } }[];
+  payload?: {
+    name: string; value: number; color: string;
+    payload: { corregidaReal?: number; auditTs?: string; auditQuien?: string; auditJornada?: string; auditPrev?: number };
+  }[];
 }) {
   if (!active || !payload?.length) return null;
+  const p0 = payload[0];
+  const hasAudit = p0?.payload.auditTs;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs">
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs space-y-1">
       {payload.map(p => {
         if (p.value == null) return null;
-        // Para "Corregida", mostrar el valor real (no el desplazado visualmente)
         const display = p.name === "Corregida" && p.payload.corregidaReal != null
-          ? p.payload.corregidaReal
-          : p.value;
+          ? p.payload.corregidaReal : p.value;
         return (
           <div key={p.name} className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full" style={{ background: p.color }}/>
@@ -39,6 +42,15 @@ function CustomTooltip({ active, payload }: {
           </div>
         );
       })}
+      {hasAudit && (
+        <div className="pt-1 border-t border-gray-100 text-[10px] text-gray-400 space-y-0.5">
+          <div>🕐 {formatearTs(p0.payload.auditTs!)}</div>
+          <div>👤 {p0.payload.auditQuien} · {JORNADA_LABEL[p0.payload.auditJornada as keyof typeof JORNADA_LABEL] ?? p0.payload.auditJornada}</div>
+          {p0.payload.auditPrev != null && (
+            <div className="text-amber-600">Valor anterior: {p0.payload.auditPrev.toFixed(1)}°C</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -50,14 +62,21 @@ export default function NeveraChart({ lecturas, mes, año, rangoMin, rangoMax, f
   // corregidaDisplay = valor real + offsetVisual extra para separación visual
   // corregidaReal    = valor real (solo para tooltip)
   const data = Array.from({ length: dias }, (_, i) => {
-    const dia = i + 1;
-    const v   = lecturas[String(dia)];
-    const real = v != null ? v + factorCorreccion : null;
+    const dia   = i + 1;
+    const entry = lecturas[String(dia)];
+    const v     = valorDeLectura(entry);
+    const real  = v != null ? v + factorCorreccion : null;
+    const audit = esLecturaAuditada(entry) ? entry : null;
     return {
       dia,
-      lectura:        v    != null ? parseFloat(v.toFixed(1))    : null,
-      corregidaReal:  real != null ? parseFloat(real.toFixed(1)) : null,
-      corregida:      real != null ? parseFloat((real + offsetVisual).toFixed(1)) : null,
+      lectura:       v    != null ? parseFloat(v.toFixed(1))    : null,
+      corregidaReal: real != null ? parseFloat(real.toFixed(1)) : null,
+      corregida:     real != null ? parseFloat((real + offsetVisual).toFixed(1)) : null,
+      // Datos de auditoría para el tooltip
+      auditTs:       audit?.ts,
+      auditQuien:    audit?.quien,
+      auditJornada:  audit?.jornada,
+      auditPrev:     audit?.prev?.length ? audit.prev[audit.prev.length - 1].v : undefined,
     };
   });
 

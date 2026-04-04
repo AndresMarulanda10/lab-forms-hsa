@@ -1,17 +1,20 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   ChevronLeft, ChevronRight, Save, Printer, Loader2,
-  CheckCircle, AlertCircle, Refrigerator, Plus, PenLine,
+  CheckCircle, AlertCircle, Refrigerator, Plus, PenLine, History,
 } from "lucide-react";
 import Link from "next/link";
 import HospitalHeader from "@/components/HospitalHeader";
 import HospitalFooter from "@/components/HospitalFooter";
 import NeveraChart from "@/components/NeveraChart";
 import FirmaGuardadoModal from "@/components/FirmaGuardadoModal";
-import type { Nevera, RegistroNevera, LecturasNevera } from "@/lib/types";
-import { MESES, getDiasEnMes } from "@/lib/types";
+import type { Nevera, RegistroNevera, LecturasNevera, JornadaKey } from "@/lib/types";
+import {
+  MESES, getDiasEnMes, valorDeLectura, esLecturaAuditada,
+  enriquecerLecturas, formatearTs, JORNADA_LABEL,
+} from "@/lib/types";
 
 export default function NeverasRegistroPage() {
   const now = new Date();
@@ -28,6 +31,8 @@ export default function NeverasRegistroPage() {
   const [rangoMax, setRangoMax] = useState(8);
 
   const [lecturas, setLecturas] = useState<LecturasNevera>({});
+  /** Snapshot de lo que cargó desde DB — para detectar cambios al guardar */
+  const lecturasOriginales = useRef<LecturasNevera>({});
   const [info, setInfo] = useState({
     marca: "", modelo: "", serial: "", ubicacion: "", certificado: "", factor_correccion: "0.54",
     responsable_manana: "", responsable_tarde: "", responsable_noche: "",
@@ -60,7 +65,9 @@ export default function NeverasRegistroPage() {
     const data: RegistroNevera[] = await res.json();
     if (data.length > 0) {
       const r = data[0];
-      setLecturas(r.lecturas || {});
+      const lecs = (r.lecturas || {}) as LecturasNevera;
+      setLecturas(lecs);
+      lecturasOriginales.current = lecs;   // ← snapshot para detectar cambios
       setInfo(prev => ({
         ...prev,
         marca:               r.dispositivo_marca   ?? "",
@@ -76,6 +83,7 @@ export default function NeverasRegistroPage() {
       }));
     } else {
       setLecturas({});
+      lecturasOriginales.current = {};     // ← mes vacío
       setInfo(prev => ({
         ...prev,
         responsable_manana: "", responsable_tarde: "", responsable_noche: "",
@@ -94,6 +102,7 @@ export default function NeverasRegistroPage() {
     const max  = getDiasEnMes(mes, año);
     if (isNaN(dia) || dia < 1 || dia > max) { showToast(`Día inválido (1–${max})`, "err"); return; }
     if (isNaN(temp)) { showToast("Ingresá una temperatura", "err"); return; }
+    // Guarda el número plano — se enriquece con auditoría al firmar y guardar
     setLecturas(prev => ({ ...prev, [String(dia)]: temp }));
     setInputTemp("");
     setInputDia(String(dia < max ? dia + 1 : dia));
@@ -109,12 +118,33 @@ export default function NeverasRegistroPage() {
     setFirmaModal(true);
   };
 
-  /** Se llama desde el modal, con la firma capturada */
+  /** Se llama desde el modal, con la firma capturada y la jornada seleccionada */
   const handleSaveWithFirma = async ({ firma, jornada }: { firma: string; jornada?: "manana" | "tarde" | "noche" }) => {
     if (!selectedNevera) return;
     setSaving(true);
 
-    // Actualiza la firma correspondiente en memoria
+    const jornadaKey = (jornada ?? "manana") as JornadaKey;
+    const responsableDeJornada =
+      jornadaKey === "manana" ? info.responsable_manana :
+      jornadaKey === "tarde"  ? info.responsable_tarde  :
+                                info.responsable_noche;
+
+    // Enriquecer lecturas con auditoría: timestamp, quien, jornada, firma
+    const audit = {
+      ts: new Date().toISOString(),
+      quien: responsableDeJornada || "—",
+      jornada: jornadaKey,
+      firma,
+    };
+    const lecturasAuditadas = enriquecerLecturas(
+      lecturas, lecturasOriginales.current, audit,
+    );
+
+    // Actualizar el snapshot para próximas ediciones en la misma sesión
+    lecturasOriginales.current = lecturasAuditadas;
+    setLecturas(lecturasAuditadas);
+
+    // Actualizar firma a nivel de mes (para compatibilidad con el schema actual)
     const nuevasFirmas = { ...firmas };
     if (jornada) nuevasFirmas[jornada] = firma;
     setFirmas(nuevasFirmas);
@@ -123,7 +153,8 @@ export default function NeverasRegistroPage() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         nevera_id:           selectedNevera.id,
-        año, mes, lecturas,
+        año, mes,
+        lecturas:            lecturasAuditadas,   // ← JSONB enriquecido
         dispositivo_marca:   info.marca,
         dispositivo_modelo:  info.modelo,
         dispositivo_serial:  info.serial,

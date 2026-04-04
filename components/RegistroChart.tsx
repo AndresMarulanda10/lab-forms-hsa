@@ -5,7 +5,7 @@ import {
   Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer,
 } from "recharts";
 import type { LecturasTermohigrometria } from "@/lib/types";
-import { getDiasEnMes } from "@/lib/types";
+import { getDiasEnMes, formatearTs } from "@/lib/types";
 
 interface Props {
   modo: "temperatura" | "humedad";
@@ -23,17 +23,21 @@ interface Props {
 
 function CustomTooltip({ active, payload, unidad }: {
   active?: boolean;
-  payload?: { name: string; value: number; color: string; payload: { corregidaReal?: number } }[];
+  payload?: {
+    name: string; value: number; color: string;
+    payload: { corregidaReal?: number; auditTs?: string; auditQuien?: string };
+  }[];
   unidad?: string;
 }) {
   if (!active || !payload?.length) return null;
+  const p0 = payload[0];
+  const hasAudit = p0?.payload.auditTs;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs">
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs space-y-1">
       {payload.map(p => {
         if (p.value == null) return null;
         const display = p.name === "Corregida" && p.payload.corregidaReal != null
-          ? p.payload.corregidaReal
-          : p.value;
+          ? p.payload.corregidaReal : p.value;
         return (
           <div key={p.name} className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full" style={{ background: p.color }}/>
@@ -42,6 +46,12 @@ function CustomTooltip({ active, payload, unidad }: {
           </div>
         );
       })}
+      {hasAudit && (
+        <div className="pt-1 border-t border-gray-100 text-[10px] text-gray-400 space-y-0.5">
+          <div>🕐 {formatearTs(p0.payload.auditTs!)}</div>
+          <div>👤 {p0.payload.auditQuien}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -63,6 +73,9 @@ export default function RegistroChart({
       lectura:       v    != null ? parseFloat(v.toFixed(1))    : null,
       corregidaReal: real != null ? parseFloat(real.toFixed(1)) : null,
       corregida:     real != null ? parseFloat((real + offsetVisual).toFixed(1)) : null,
+      // Auditoría para tooltip
+      auditTs:    l?.ts,
+      auditQuien: l?.quien,
     };
   });
 

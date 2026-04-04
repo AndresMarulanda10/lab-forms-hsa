@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   ChevronLeft, ChevronRight, Printer, Loader2,
   CheckCircle, AlertCircle, Plus, PenLine,
@@ -10,7 +10,7 @@ import HospitalFooter from "@/components/HospitalFooter";
 import RegistroChart from "@/components/RegistroChart";
 import FirmaGuardadoModal from "@/components/FirmaGuardadoModal";
 import type { LecturasTermohigrometria, RegistroTermohigrometria } from "@/lib/types";
-import { MESES, getDiasEnMes } from "@/lib/types";
+import { MESES, getDiasEnMes, enriquecerLecturasTermohigro } from "@/lib/types";
 
 export default function TermohigrometriaPage() {
   const now = new Date();
@@ -26,8 +26,10 @@ export default function TermohigrometriaPage() {
   const [humMin,  setHumMin]  = useState(40);
   const [humMax,  setHumMax]  = useState(70);
 
-  // lecturas: key = String(día), value = { temp, hum }
+  // lecturas: key = String(día), value = { temp, hum, ts?, quien?, firma?, prev? }
   const [lecturas, setLecturas] = useState<LecturasTermohigrometria>({});
+  /** Snapshot de lo que cargó desde DB — para detectar cambios al guardar */
+  const lecturasOriginales = useRef<LecturasTermohigrometria>({});
   const [info, setInfo] = useState({
     ubicacion: "", dispositivo_nombre: "TERMOHIGROMETRO",
     dispositivo_marca: "", dispositivo_modelo: "",
@@ -58,7 +60,9 @@ export default function TermohigrometriaPage() {
         factor_correccion: r.factor_correccion, responsable: r.responsable,
         firma: r.firma ?? "", observaciones: r.observaciones,
       });
-      setLecturas(r.lecturas || {});
+      const lecs = (r.lecturas || {}) as LecturasTermohigrometria;
+      setLecturas(lecs);
+      lecturasOriginales.current = lecs;   // ← snapshot
     } else {
       setInfo({
         ubicacion: "", dispositivo_nombre: "TERMOHIGROMETRO",
@@ -67,6 +71,7 @@ export default function TermohigrometriaPage() {
         factor_correccion: "0.54", responsable: "", firma: "", observaciones: "",
       });
       setLecturas({});
+      lecturasOriginales.current = {};
     }
     setLoading(false);
   }, [año, mes]);
@@ -103,9 +108,22 @@ export default function TermohigrometriaPage() {
   const handleSaveWithFirma = async ({ firma: f }: { firma: string }) => {
     setSaving(true);
     setFirma(f);
+
+    // Enriquecer lecturas con auditoría: timestamp, quien, firma
+    const audit = {
+      ts: new Date().toISOString(),
+      quien: info.responsable || "—",
+      firma: f,
+    };
+    const lecturasAuditadas = enriquecerLecturasTermohigro(
+      lecturas, lecturasOriginales.current, audit,
+    );
+    lecturasOriginales.current = lecturasAuditadas;
+    setLecturas(lecturasAuditadas);
+
     const res = await fetch("/api/termohigrometria", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ año, mes, ...info, lecturas, firma: f }),
+      body: JSON.stringify({ año, mes, ...info, lecturas: lecturasAuditadas, firma: f }),
     });
     setSaving(false);
     if (!res.ok) throw new Error((await res.json()).error);
