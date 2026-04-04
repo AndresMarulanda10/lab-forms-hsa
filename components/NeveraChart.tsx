@@ -4,8 +4,32 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ReferenceLine, ReferenceArea, ResponsiveContainer,
 } from "recharts";
-import type { LecturasNevera } from "@/lib/types";
-import { getDiasEnMes, valorDeLectura, esLecturaAuditada, formatearTs, JORNADA_LABEL } from "@/lib/types";
+import type { LecturasNevera, Jornada } from "@/lib/types";
+import { getDiasEnMes, valorDeLectura, esLecturaAuditada, formatearTs, lecturaClave } from "@/lib/types";
+
+// ─── Colores y etiquetas por jornada ─────────────────────────────────────────
+const J_COLOR: Record<Jornada, string> = {
+  M: "#006b3c", // HSA verde
+  T: "#d97706", // ámbar
+  N: "#4338ca", // índigo
+};
+const J_LABEL: Record<Jornada, string> = {
+  M: "Mañana",
+  T: "Tarde",
+  N: "Noche",
+};
+const JORNADAS: Jornada[] = ["M", "T", "N"];
+
+// ─── Tipos internos del gráfico ───────────────────────────────────────────────
+interface DataPoint {
+  dia: number;
+  M: number | null;
+  T: number | null;
+  N: number | null;
+  auditM?: { ts: string; quien: string; prev?: { v: number }[] } | null;
+  auditT?: { ts: string; quien: string; prev?: { v: number }[] } | null;
+  auditN?: { ts: string; quien: string; prev?: { v: number }[] } | null;
+}
 
 interface Props {
   lecturas: LecturasNevera;
@@ -14,69 +38,89 @@ interface Props {
   rangoMin: number;
   rangoMax: number;
   factorCorreccion: number;
-  /** Desplazamiento visual adicional para separar las líneas en pantalla (no afecta valores reales) */
-  offsetVisual?: number;
 }
 
-function CustomTooltip({ active, payload }: {
+// ─── Tooltip personalizado ────────────────────────────────────────────────────
+function CustomTooltip({
+  active, payload, rangoMin, rangoMax, factorCorreccion,
+}: {
   active?: boolean;
-  payload?: {
-    name: string; value: number; color: string;
-    payload: { corregidaReal?: number; auditTs?: string; auditQuien?: string; auditJornada?: string; auditPrev?: number };
-  }[];
+  payload?: { payload: DataPoint }[];
+  rangoMin: number;
+  rangoMax: number;
+  factorCorreccion: number;
 }) {
   if (!active || !payload?.length) return null;
-  const p0 = payload[0];
-  const hasAudit = p0?.payload.auditTs;
+  const pt = payload[0].payload;
+  if (!JORNADAS.some(j => pt[j] != null)) return null;
+
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs space-y-1">
-      {payload.map(p => {
-        if (p.value == null) return null;
-        const display = p.name === "Corregida" && p.payload.corregidaReal != null
-          ? p.payload.corregidaReal : p.value;
+    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs space-y-1.5 max-w-[220px]">
+      <div className="font-semibold text-gray-600 border-b border-gray-100 pb-1">
+        Día {pt.dia}
+      </div>
+      {JORNADAS.map(j => {
+        const v = pt[j];
+        if (v == null) return null;
+        const fuera = v < rangoMin || v > rangoMax;
+        const corr = factorCorreccion !== 0 ? (v + factorCorreccion).toFixed(1) : null;
+        const audit = pt[`audit${j}` as "auditM" | "auditT" | "auditN"];
         return (
-          <div key={p.name} className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full" style={{ background: p.color }}/>
-            <span className="text-gray-500">{p.name}:</span>
-            <span className="font-bold">{display.toFixed(1)}°C</span>
+          <div key={j} className="space-y-0.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: J_COLOR[j] }} />
+              <span className="text-gray-500 text-[11px]">{J_LABEL[j]}:</span>
+              <span className={`font-bold ${fuera ? "text-red-500" : "text-gray-800"}`}>
+                {v.toFixed(1)}°C
+              </span>
+              {corr && <span className="text-gray-400 text-[10px]">→ {corr}°C</span>}
+              {fuera && <span className="text-red-400 text-[10px] font-medium">⚠ fuera</span>}
+            </div>
+            {audit && (
+              <div className="ml-4 text-[10px] text-gray-400 space-y-0.5">
+                <div>🕐 {formatearTs(audit.ts)}</div>
+                <div>👤 {audit.quien}</div>
+                {audit.prev && audit.prev.length > 0 && (
+                  <div className="text-amber-500">
+                    Anterior: {audit.prev[audit.prev.length - 1].v.toFixed(1)}°C
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
-      {hasAudit && (
-        <div className="pt-1 border-t border-gray-100 text-[10px] text-gray-400 space-y-0.5">
-          <div>🕐 {formatearTs(p0.payload.auditTs!)}</div>
-          <div>👤 {p0.payload.auditQuien} · {JORNADA_LABEL[p0.payload.auditJornada as keyof typeof JORNADA_LABEL] ?? p0.payload.auditJornada}</div>
-          {p0.payload.auditPrev != null && (
-            <div className="text-amber-600">Valor anterior: {p0.payload.auditPrev.toFixed(1)}°C</div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
-export default function NeveraChart({ lecturas, mes, año, rangoMin, rangoMax, factorCorreccion, offsetVisual = 2 }: Props) {
+// ─── Componente principal ─────────────────────────────────────────────────────
+export default function NeveraChart({
+  lecturas, mes, año, rangoMin, rangoMax, factorCorreccion,
+}: Props) {
   const dias = getDiasEnMes(mes, año);
 
-  // Un dato por día: lectura cruda y corregida
-  // corregidaDisplay = valor real + offsetVisual extra para separación visual
-  // corregidaReal    = valor real (solo para tooltip)
-  const data = Array.from({ length: dias }, (_, i) => {
-    const dia   = i + 1;
-    const entry = lecturas[String(dia)];
-    const v     = valorDeLectura(entry);
-    const real  = v != null ? v + factorCorreccion : null;
-    const audit = esLecturaAuditada(entry) ? entry : null;
+  /** Backward-compat: clave "dia" legacy → Mañana */
+  const getEntry = (dia: number, j: Jornada) => {
+    const entry = lecturas[lecturaClave(dia, j)];
+    if (entry !== undefined) return entry;
+    if (j === "M") return lecturas[String(dia)];
+    return undefined;
+  };
+
+  const data: DataPoint[] = Array.from({ length: dias }, (_, i) => {
+    const dia = i + 1;
+    const eM = getEntry(dia, "M");
+    const eT = getEntry(dia, "T");
+    const eN = getEntry(dia, "N");
     return {
       dia,
-      lectura:       v    != null ? parseFloat(v.toFixed(1))    : null,
-      corregidaReal: real != null ? parseFloat(real.toFixed(1)) : null,
-      corregida:     real != null ? parseFloat((real + offsetVisual).toFixed(1)) : null,
-      // Datos de auditoría para el tooltip
-      auditTs:       audit?.ts,
-      auditQuien:    audit?.quien,
-      auditJornada:  audit?.jornada,
-      auditPrev:     audit?.prev?.length ? audit.prev[audit.prev.length - 1].v : undefined,
+      M: valorDeLectura(eM),
+      T: valorDeLectura(eT),
+      N: valorDeLectura(eN),
+      auditM: esLecturaAuditada(eM) ? eM : null,
+      auditT: esLecturaAuditada(eT) ? eT : null,
+      auditN: esLecturaAuditada(eN) ? eN : null,
     };
   });
 
@@ -86,7 +130,7 @@ export default function NeveraChart({ lecturas, mes, año, rangoMin, rangoMax, f
         <CartesianGrid strokeDasharray="2 2" stroke="#e5e7eb" />
 
         {/* Zona aceptable */}
-        <ReferenceArea y1={rangoMin} y2={rangoMax} fill="#dcfce7" fillOpacity={0.5} stroke="none" />
+        <ReferenceArea y1={rangoMin} y2={rangoMax} fill="#dcfce7" fillOpacity={0.45} stroke="none" />
         <ReferenceLine y={rangoMin} stroke="#16a34a" strokeDasharray="4 2" strokeWidth={1}
           label={{ value: `${rangoMin}°C`, position: "insideBottomRight", fontSize: 9, fill: "#16a34a" }} />
         <ReferenceLine y={rangoMax} stroke="#16a34a" strokeDasharray="4 2" strokeWidth={1}
@@ -95,40 +139,43 @@ export default function NeveraChart({ lecturas, mes, año, rangoMin, rangoMax, f
         <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#9ca3af" }} tickLine={false}
           axisLine={{ stroke: "#d1d5db" }}
           label={{ value: "Días", position: "insideBottom", offset: -10, fontSize: 10, fill: "#9ca3af" }} />
-        <YAxis domain={[-2, 10 + offsetVisual]} tickCount={14}
+        <YAxis domain={[rangoMin - 2, rangoMax + 2]} tickCount={12}
           tick={{ fontSize: 10, fill: "#9ca3af" }} tickLine={false} axisLine={false}
           tickFormatter={v => Number.isInteger(v) ? `${v}°` : `${v.toFixed(1)}°`}
           label={{ value: "Temperatura", angle: -90, position: "insideLeft", fontSize: 10, fill: "#9ca3af", offset: 10 }} />
 
-        <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#e5e7eb", strokeDasharray: "3 3" }} />
+        <Tooltip
+          content={
+            <CustomTooltip rangoMin={rangoMin} rangoMax={rangoMax} factorCorreccion={factorCorreccion} />
+          }
+          cursor={{ stroke: "#e5e7eb", strokeDasharray: "3 3" }}
+        />
 
-        {/* Línea 1: lectura real — verde sólido, puntos rellenos */}
-        <Line type="linear" dataKey="lectura" name="Lectura"
-          stroke="#006b3c" strokeWidth={2.5} connectNulls={false}
-          dot={({ key: _k, cx, cy, payload }) => {
-            if (!cx || !cy || payload?.lectura == null) return <g key={_k} />;
-            const fuera = payload.lectura < rangoMin || payload.lectura > rangoMax;
-            return <circle key={_k} cx={cx} cy={cy} r={4}
-              fill={fuera ? "#ef4444" : "#006b3c"} stroke="white" strokeWidth={1.5} />;
-          }}
-          activeDot={{ r: 6 }} />
-
-        {/* Línea 2: lectura corregida — azul discontinuo más grueso, rombo hueco */}
-        {factorCorreccion !== 0 && (
-          <Line type="linear" dataKey="corregida" name="Corregida"
-            stroke="#0052a5" strokeWidth={2} strokeDasharray="7 4" connectNulls={false}
-            dot={({ key: _k, cx, cy, payload }) => {
-              if (!cx || !cy || payload?.corregida == null) return <g key={_k} />;
-              // Rombo (diamante) para diferenciar del punto circular
-              const s = 5;
+        {/* Una línea por jornada */}
+        {JORNADAS.map(j => (
+          <Line
+            key={j}
+            type="linear"
+            dataKey={j}
+            name={J_LABEL[j]}
+            stroke={J_COLOR[j]}
+            strokeWidth={2}
+            connectNulls={false}
+            dot={({ key: _k, cx, cy, payload }: { key: string; cx: number; cy: number; payload: DataPoint }) => {
+              const v = payload?.[j as keyof DataPoint] as number | null | undefined;
+              if (!cx || !cy || v == null) return <g key={_k} />;
+              const fuera = v < rangoMin || v > rangoMax;
               return (
-                <polygon key={_k}
-                  points={`${cx},${cy - s} ${cx + s},${cy} ${cx},${cy + s} ${cx - s},${cy}`}
-                  fill="white" stroke="#0052a5" strokeWidth={2} />
+                <circle
+                  key={_k} cx={cx} cy={cy} r={4}
+                  fill={fuera ? "#ef4444" : J_COLOR[j]}
+                  stroke="white" strokeWidth={1.5}
+                />
               );
             }}
-            activeDot={{ r: 6 }} />
-        )}
+            activeDot={{ r: 6 }}
+          />
+        ))}
       </LineChart>
     </ResponsiveContainer>
   );

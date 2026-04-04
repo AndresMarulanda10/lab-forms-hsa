@@ -12,6 +12,12 @@ import FirmaGuardadoModal from "@/components/FirmaGuardadoModal";
 import type { LecturasTermohigrometria, RegistroTermohigrometria } from "@/lib/types";
 import { MESES, getDiasEnMes, enriquecerLecturasTermohigro } from "@/lib/types";
 
+// ─── Colores y etiquetas de jornada ──────────────────────────────────────────
+type J = "M" | "T" | "N";
+const J_COLOR: Record<J, string> = { M: "#006b3c", T: "#d97706", N: "#4338ca" };
+const J_LABEL: Record<J, string> = { M: "Mañana", T: "Tarde", N: "Noche" };
+const JORNADAS: J[] = ["M", "T", "N"];
+
 export default function TermohigrometriaPage() {
   const now = new Date();
   const [año, setAño] = useState(now.getFullYear());
@@ -26,9 +32,7 @@ export default function TermohigrometriaPage() {
   const [humMin,  setHumMin]  = useState(40);
   const [humMax,  setHumMax]  = useState(70);
 
-  // lecturas: key = String(día), value = { temp, hum, ts?, quien?, firma?, prev? }
   const [lecturas, setLecturas] = useState<LecturasTermohigrometria>({});
-  /** Snapshot de lo que cargó desde DB — para detectar cambios al guardar */
   const lecturasOriginales = useRef<LecturasTermohigrometria>({});
   const [info, setInfo] = useState({
     ubicacion: "", dispositivo_nombre: "TERMOHIGROMETRO",
@@ -39,16 +43,18 @@ export default function TermohigrometriaPage() {
     observaciones: "",
   });
 
-  // Ingreso
-  const [inputDia,  setInputDia]  = useState(String(now.getDate()));
-  const [inputTemp, setInputTemp] = useState("");
-  const [inputHum,  setInputHum]  = useState("");
+  // ── Ingreso ────────────────────────────────────────────────────────────────
+  const [jornadaAdd, setJornadaAdd] = useState<J>("M");
+  const [inputDia,   setInputDia]   = useState(String(now.getDate()));
+  const [inputTemp,  setInputTemp]  = useState("");
+  const [inputHum,   setInputHum]   = useState("");
 
   const showToast = (msg: string, type: "ok" | "err" = "ok") => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 3500);
   };
 
+  // ── Carga ──────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
     const res  = await fetch(`/api/termohigrometria?año=${año}&mes=${mes}`);
@@ -68,7 +74,7 @@ export default function TermohigrometriaPage() {
       setFirmas({ manana: r.firma_manana ?? "", tarde: r.firma_tarde ?? "", noche: r.firma_noche ?? "" });
       const lecs = (r.lecturas || {}) as LecturasTermohigrometria;
       setLecturas(lecs);
-      lecturasOriginales.current = lecs;   // ← snapshot
+      lecturasOriginales.current = lecs;
     } else {
       setInfo({
         ubicacion: "", dispositivo_nombre: "TERMOHIGROMETRO",
@@ -87,59 +93,65 @@ export default function TermohigrometriaPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const responsableDeJornada = (j: J) =>
+    j === "M" ? info.responsable_manana :
+    j === "T" ? info.responsable_tarde  : info.responsable_noche;
+
+  // ── Agregar lectura ────────────────────────────────────────────────────────
   const agregar = () => {
+    // 1. Validar responsable de la jornada
+    if (!responsableDeJornada(jornadaAdd).trim()) {
+      showToast(
+        `Completá el nombre del responsable de ${J_LABEL[jornadaAdd]} antes de ingresar datos.`,
+        "err",
+      );
+      return;
+    }
+    // 2. Validar día y temperatura
     const dia  = parseInt(inputDia);
     const temp = parseFloat(inputTemp);
     const max  = getDiasEnMes(mes, año);
     if (isNaN(dia) || dia < 1 || dia > max) { showToast(`Día inválido (1–${max})`, "err"); return; }
     if (isNaN(temp)) { showToast("Ingresá temperatura", "err"); return; }
     const hum = parseFloat(inputHum);
+
+    // 3. Guardar como "dia_Jornada" (ej: "5_M")
+    const clave = `${dia}_${jornadaAdd}`;
     setLecturas(prev => ({
       ...prev,
-      [String(dia)]: {
-        temp,
-        hum: isNaN(hum) ? null : hum,
-      },
+      [clave]: { temp, hum: isNaN(hum) ? null : hum },
     }));
     setInputTemp("");
     setInputHum("");
     setInputDia(String(dia < max ? dia + 1 : dia));
   };
 
+  // ── Pedir firma ────────────────────────────────────────────────────────────
   const pedirFirma = () => {
     if (Object.keys(lecturas).length === 0) {
       showToast("Ingresá al menos una lectura antes de guardar.", "err");
       return;
     }
-    const sinNombres =
-      !info.responsable_manana.trim() &&
-      !info.responsable_tarde.trim()  &&
-      !info.responsable_noche.trim();
-    if (sinNombres) {
+    if (!info.responsable_manana.trim() && !info.responsable_tarde.trim() && !info.responsable_noche.trim()) {
       showToast("Completá el nombre de al menos un responsable antes de guardar.", "err");
       return;
     }
     setFirmaModal(true);
   };
 
+  // ── Guardar con firma ──────────────────────────────────────────────────────
   const handleSaveWithFirma = async ({ firma: f, jornada }: { firma: string; jornada?: "manana" | "tarde" | "noche" }) => {
     setSaving(true);
 
     const jornadaKey = (jornada ?? "manana") as "manana" | "tarde" | "noche";
-    const responsableDeJornada =
+    const resp =
       jornadaKey === "manana" ? info.responsable_manana :
       jornadaKey === "tarde"  ? info.responsable_tarde  :
                                 info.responsable_noche;
 
-    // Enriquecer lecturas con auditoría: timestamp, quien, firma
-    const audit = {
-      ts: new Date().toISOString(),
-      quien: responsableDeJornada || "—",
-      firma: f,
-    };
-    const lecturasAuditadas = enriquecerLecturasTermohigro(
-      lecturas, lecturasOriginales.current, audit,
-    );
+    const audit = { ts: new Date().toISOString(), quien: resp || "—", firma: f };
+    const lecturasAuditadas = enriquecerLecturasTermohigro(lecturas, lecturasOriginales.current, audit);
     lecturasOriginales.current = lecturasAuditadas;
     setLecturas(lecturasAuditadas);
 
@@ -155,8 +167,7 @@ export default function TermohigrometriaPage() {
         firma_manana: nuevasFirmas.manana,
         firma_tarde:  nuevasFirmas.tarde,
         firma_noche:  nuevasFirmas.noche,
-        // campos legacy vacíos para compatibilidad
-        responsable: responsableDeJornada || "",
+        responsable: resp || "",
         firma: f,
       }),
     });
@@ -165,6 +176,7 @@ export default function TermohigrometriaPage() {
     showToast("Registro guardado con firma ✓");
   };
 
+  // ── Navegación de mes ──────────────────────────────────────────────────────
   const navMes = (d: number) => {
     let m = mes + d, a = año;
     if (m > 12) { m = 1; a++; }
@@ -174,20 +186,24 @@ export default function TermohigrometriaPage() {
 
   const fc = parseFloat(info.factor_correccion) || 0;
 
+  // ── Datos de prueba con 3 jornadas ────────────────────────────────────────
   const cargarDatosPrueba = () => {
     const nuevas: LecturasTermohigrometria = {};
     const dias = getDiasEnMes(mes, año);
     for (let d = 1; d <= dias; d++) {
-      nuevas[String(d)] = {
-        temp: parseFloat((tempMin + Math.random() * (tempMax - tempMin + 4) - 2).toFixed(1)),
-        hum:  parseFloat((humMin  + Math.random() * (humMax  - humMin  + 8) - 4).toFixed(1)),
-      };
+      for (const j of JORNADAS) {
+        nuevas[`${d}_${j}`] = {
+          temp: parseFloat((tempMin + Math.random() * (tempMax - tempMin + 4) - 2).toFixed(1)),
+          hum:  parseFloat((humMin  + Math.random() * (humMax  - humMin  + 8) - 4).toFixed(1)),
+        };
+      }
     }
     setLecturas(nuevas);
   };
 
   return (
     <div className="space-y-6">
+      {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${toast.type === "ok" ? "bg-green-600" : "bg-red-600"} text-white`}>
           {toast.type === "ok" ? <CheckCircle size={16}/> : <AlertCircle size={16}/>}
@@ -195,13 +211,13 @@ export default function TermohigrometriaPage() {
         </div>
       )}
 
-      {/* ── Encabezado ───────────────────────────────────────────────────────── */}
+      {/* ═══ ENCABEZADO ══════════════════════════════════════════════════════ */}
       <HospitalHeader
         codigo="M-GAD-LAB-F-021" version="2"
         nombreDocumento="FORMATO PARA REGISTRO DE CONDICIONES AMBIENTALES DE ALMACENAMIENTO (T°C Y HUMEDAD)"
       />
 
-      {/* ── Metadatos (igual al formato físico) ──────────────────────────────── */}
+      {/* ─── Metadatos ───────────────────────────────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 divide-x divide-y divide-gray-200">
           <div className="px-3 py-2">
@@ -247,24 +263,20 @@ export default function TermohigrometriaPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-gray-200 border-t border-gray-200 bg-gray-50/50">
           <div className="px-3 py-1.5 flex flex-col gap-1">
             <div className="flex items-center gap-1 flex-wrap">
-              <span className="text-gray-400 text-[10px] font-semibold uppercase">Temperatura Ambiente</span>
-              <input type="number" step="0.5"
-                className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-hsa-green text-gray-700 font-semibold text-[10px]"
+              <span className="text-gray-400 text-[10px] font-semibold uppercase">Temperatura</span>
+              <input type="number" step="0.5" className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-hsa-green text-gray-700 font-semibold text-[10px]"
                 value={tempMin} onChange={e => setTempMin(parseFloat(e.target.value)||0)}/>
               <span className="text-gray-400 text-[10px]">–</span>
-              <input type="number" step="0.5"
-                className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-hsa-green text-gray-700 font-semibold text-[10px]"
+              <input type="number" step="0.5" className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-hsa-green text-gray-700 font-semibold text-[10px]"
                 value={tempMax} onChange={e => setTempMax(parseFloat(e.target.value)||0)}/>
               <span className="text-gray-400 text-[10px]">°C</span>
             </div>
             <div className="flex items-center gap-1 flex-wrap">
-              <span className="text-gray-400 text-[10px] font-semibold uppercase">Humedad Relativa</span>
-              <input type="number" step="1"
-                className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-sky-400 text-gray-700 font-semibold text-[10px]"
+              <span className="text-gray-400 text-[10px] font-semibold uppercase">Humedad</span>
+              <input type="number" step="1" className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-sky-400 text-gray-700 font-semibold text-[10px]"
                 value={humMin} onChange={e => setHumMin(parseFloat(e.target.value)||0)}/>
               <span className="text-gray-400 text-[10px]">–</span>
-              <input type="number" step="1"
-                className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-sky-400 text-gray-700 font-semibold text-[10px]"
+              <input type="number" step="1" className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-sky-400 text-gray-700 font-semibold text-[10px]"
                 value={humMax} onChange={e => setHumMax(parseFloat(e.target.value)||0)}/>
               <span className="text-gray-400 text-[10px]">%</span>
             </div>
@@ -285,7 +297,7 @@ export default function TermohigrometriaPage() {
               🧪 Prueba
             </button>
             <button onClick={pedirFirma} disabled={saving || loading}
-              className="flex items-center gap-1 px-3 py-1 bg-hsa-green text-white rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
               style={{ backgroundColor: "#006b3c" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#004d2a"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#006b3c"; }}>
@@ -300,37 +312,61 @@ export default function TermohigrometriaPage() {
         </div>
       </div>
 
-      {/* ── Gráficas ─────────────────────────────────────────────────────────── */}
+      {/* ═══ GRÁFICAS ════════════════════════════════════════════════════════ */}
       {loading ? (
         <div className="flex items-center justify-center h-48 text-gray-400">
           <Loader2 size={28} className="animate-spin mr-2"/> Cargando…
         </div>
       ) : (
-        <>
-          <div className="space-y-6">
-            {/* Temperatura */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <RegistroChart
-                modo="temperatura" lecturas={lecturas} mes={mes} año={año}
-                rangoMin={tempMin} rangoMax={tempMax}
-                factorCorreccion={fc}
-                titulo="Temperatura Ambiental (°C)" unidad="°C"/>
+        <div className="space-y-6">
+          {/* ── Temperatura ─────────────────────────────────────────────── */}
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <RegistroChart
+              modo="temperatura" lecturas={lecturas} mes={mes} año={año}
+              rangoMin={tempMin} rangoMax={tempMax}
+              factorCorreccion={fc}
+              titulo="Temperatura Ambiental" unidad="°C"/>
 
-              {/* Ingreso */}
-              <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-t border-gray-100 bg-gray-50/50 no-print">
-                <span className="text-xs text-gray-400 font-medium">Agregar:</span>
+            {/* Ingreso de lectura */}
+            <div className="border-t border-gray-100 bg-gray-50/50 no-print">
+              {/* Selector de jornada */}
+              <div className="flex items-center gap-3 px-4 pt-3 pb-2 flex-wrap">
+                <span className="text-xs text-gray-400 font-medium">Jornada:</span>
+                <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+                  {JORNADAS.map(j => {
+                    const hasResp = responsableDeJornada(j).trim() !== "";
+                    return (
+                      <button key={j} onClick={() => setJornadaAdd(j)}
+                        className={`flex items-center gap-1 px-3 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                          jornadaAdd === j ? "bg-white shadow-sm" : "text-gray-400 hover:text-gray-600"
+                        }`}
+                        style={jornadaAdd === j ? { color: J_COLOR[j] } : {}}>
+                        {J_LABEL[j]}
+                        {!hasResp && <span className="text-amber-400 text-[10px]">⚠</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+                {!responsableDeJornada(jornadaAdd).trim() && (
+                  <span className="text-[11px] text-amber-600 font-medium">
+                    ← Completá el responsable de {J_LABEL[jornadaAdd]} para poder agregar lecturas.
+                  </span>
+                )}
+              </div>
+
+              {/* Inputs */}
+              <div className="flex flex-wrap items-center gap-3 px-4 pb-3">
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">Día</span>
                   <input type="number" min={1} max={getDiasEnMes(mes, año)}
-                    className="w-12 text-center text-sm font-bold border border-gray-200 rounded-lg px-1 py-1 focus:outline-none focus:ring-2 focus:ring-hsa-green focus:ring-opacity-30"
+                    className="w-12 text-center text-sm font-bold border border-gray-200 rounded-lg px-1 py-1 focus:outline-none focus:ring-2 focus:ring-opacity-30"
                     value={inputDia} onChange={e => setInputDia(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && document.getElementById("temp-in")?.focus()}
-                    max={getDiasEnMes(mes, año)}/>
+                    onKeyDown={e => e.key === "Enter" && document.getElementById("temp-in")?.focus()}/>
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">Temp °C</span>
                   <input id="temp-in" type="number" step="0.1"
-                    className="w-20 text-center text-sm font-bold border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-hsa-green focus:ring-opacity-30"
+                    className="w-20 text-center text-sm font-bold border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-opacity-30"
                     value={inputTemp} onChange={e => setInputTemp(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && document.getElementById("hum-in")?.focus()}
                     placeholder="0.0"/>
@@ -338,54 +374,54 @@ export default function TermohigrometriaPage() {
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">Hum %</span>
                   <input id="hum-in" type="number" step="0.1"
-                    className="w-20 text-center text-sm font-bold border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-opacity-30"
+                    className="w-20 text-center text-sm font-bold border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-opacity-30"
                     value={inputHum} onChange={e => setInputHum(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && agregar()}
                     placeholder="0.0"/>
                 </div>
                 {inputTemp && fc !== 0 && !isNaN(parseFloat(inputTemp)) && (
-                  <span className="text-xs text-hsa-green font-semibold">
+                  <span className="text-xs font-semibold" style={{ color: J_COLOR[jornadaAdd] }}>
                     → {(parseFloat(inputTemp) + fc).toFixed(1)}°C corregida
                   </span>
                 )}
                 <button onClick={agregar} disabled={!inputTemp}
-                  className="flex items-center gap-1 px-3 py-1 bg-hsa-green text-white rounded-lg text-xs font-semibold hover:bg-hsa-green-light transition-colors disabled:opacity-40">
+                  className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-xs font-semibold disabled:opacity-40"
+                  style={{ backgroundColor: inputTemp ? J_COLOR[jornadaAdd] : "#9ca3af" }}>
                   <Plus size={12}/> Agregar
                 </button>
               </div>
             </div>
+          </div>
 
-            {/* Humedad */}
+          {/* ── Humedad ────────────────────────────────────────────────── */}
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <RegistroChart
               modo="humedad" lecturas={lecturas} mes={mes} año={año}
               rangoMin={humMin} rangoMax={humMax}
-              titulo="Humedad Relativa (%)" unidad="%"/>
+              titulo="Humedad Relativa" unidad="%"/>
           </div>
 
-          {/* ── Responsables por jornada ────────────────────────────────────── */}
+          {/* ── Responsables ────────────────────────────────────────────── */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-3 divide-x divide-gray-200">
-              <div className="px-4 py-3">
-                <p className="text-gray-400 uppercase tracking-wide font-semibold mb-2 text-[10px]">Responsable Mañana</p>
-                <input className="w-full border-b border-gray-300 focus:outline-none focus:border-hsa-green pb-1 text-sm"
-                  value={info.responsable_manana}
-                  onChange={e => setInfo(i => ({...i, responsable_manana: e.target.value}))}
-                  placeholder="Nombre y cargo"/>
-              </div>
-              <div className="px-4 py-3">
-                <p className="text-gray-400 uppercase tracking-wide font-semibold mb-2 text-[10px]">Responsable Tarde</p>
-                <input className="w-full border-b border-gray-300 focus:outline-none focus:border-hsa-green pb-1 text-sm"
-                  value={info.responsable_tarde}
-                  onChange={e => setInfo(i => ({...i, responsable_tarde: e.target.value}))}
-                  placeholder="Nombre y cargo"/>
-              </div>
-              <div className="px-4 py-3">
-                <p className="text-gray-400 uppercase tracking-wide font-semibold mb-2 text-[10px]">Responsable Noche</p>
-                <input className="w-full border-b border-gray-300 focus:outline-none focus:border-hsa-green pb-1 text-sm"
-                  value={info.responsable_noche}
-                  onChange={e => setInfo(i => ({...i, responsable_noche: e.target.value}))}
-                  placeholder="Nombre y cargo"/>
-              </div>
+              {JORNADAS.map(j => {
+                const campo = j === "M" ? "responsable_manana" : j === "T" ? "responsable_tarde" : "responsable_noche";
+                return (
+                  <div key={j} className="px-4 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide mb-2"
+                      style={{ color: J_COLOR[j] }}>
+                      Responsable {J_LABEL[j]}
+                    </p>
+                    <input
+                      className="w-full border-b border-gray-300 focus:outline-none pb-1 text-sm"
+                      value={info[campo as keyof typeof info]}
+                      onChange={e => setInfo(i => ({...i, [campo]: e.target.value}))}
+                      placeholder="Nombre y cargo"
+                      onFocus={() => setJornadaAdd(j)}
+                    />
+                  </div>
+                );
+              })}
             </div>
             <div className="border-t border-gray-200">
               <div className="px-4 py-3">
@@ -397,12 +433,12 @@ export default function TermohigrometriaPage() {
               </div>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       <HospitalFooter/>
 
-      {/* ── Modal de firma ──────────────────────────────── */}
+      {/* ── Modal de firma ────────────────────────────────────────────────── */}
       <FirmaGuardadoModal
         open={firmaModal}
         onClose={() => setFirmaModal(false)}
