@@ -115,7 +115,21 @@ export default function FirmaGuardadoModal({
 
   /* ── Confirmar ───────────────────────────────────────── */
   const handleConfirm = async () => {
-    if (!hasStroke) { setError("Firmá antes de guardar."); return; }
+    // 1. Validar que haya nombre para la jornada seleccionada
+    if (responsables && !responsables[jornada]?.trim()) {
+      setError(`Completá el nombre del responsable de ${
+        jornada === "manana" ? "Mañana" : jornada === "tarde" ? "Tarde" : "Noche"
+      } antes de firmar.`);
+      return;
+    }
+    // 2. Validar que haya nombre para el responsable único (F-021 sin jornadas)
+    if (responsable !== undefined && !responsable?.trim()) {
+      setError("Completá el nombre del responsable antes de firmar.");
+      return;
+    }
+    // 3. Validar que haya firma dibujada
+    if (!hasStroke) { setError("Dibujá tu firma antes de guardar."); return; }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     setSaving(true);

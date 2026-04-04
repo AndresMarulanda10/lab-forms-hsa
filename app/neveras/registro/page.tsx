@@ -112,7 +112,15 @@ export default function NeverasRegistroPage() {
   const pedirFirma = () => {
     if (!selectedNevera) return;
     if (Object.keys(lecturas).length === 0) {
-      showToast("Ingresá al menos una lectura antes de guardar", "err");
+      showToast("Ingresá al menos una lectura antes de guardar.", "err");
+      return;
+    }
+    const sinNombres =
+      !info.responsable_manana.trim() &&
+      !info.responsable_tarde.trim()  &&
+      !info.responsable_noche.trim();
+    if (sinNombres) {
+      showToast("Completá el nombre de al menos un responsable antes de guardar.", "err");
       return;
     }
     setFirmaModal(true);
