@@ -26,6 +26,9 @@ interface DataPoint {
   M: number | null;
   T: number | null;
   N: number | null;
+  M_corr: number | null;
+  T_corr: number | null;
+  N_corr: number | null;
   auditM?: { ts: string; quien: string; prev?: { v: number }[] } | null;
   auditT?: { ts: string; quien: string; prev?: { v: number }[] } | null;
   auditN?: { ts: string; quien: string; prev?: { v: number }[] } | null;
@@ -108,16 +111,24 @@ export default function NeveraChart({
     return undefined;
   };
 
+  const hasCorr = factorCorreccion !== 0;
+
   const data: DataPoint[] = Array.from({ length: dias }, (_, i) => {
     const dia = i + 1;
     const eM = getEntry(dia, "M");
     const eT = getEntry(dia, "T");
     const eN = getEntry(dia, "N");
+    const vM = valorDeLectura(eM);
+    const vT = valorDeLectura(eT);
+    const vN = valorDeLectura(eN);
     return {
       dia,
-      M: valorDeLectura(eM),
-      T: valorDeLectura(eT),
-      N: valorDeLectura(eN),
+      M: vM,
+      T: vT,
+      N: vN,
+      M_corr: hasCorr && vM != null ? parseFloat((vM + factorCorreccion).toFixed(2)) : null,
+      T_corr: hasCorr && vT != null ? parseFloat((vT + factorCorreccion).toFixed(2)) : null,
+      N_corr: hasCorr && vN != null ? parseFloat((vN + factorCorreccion).toFixed(2)) : null,
       auditM: eM != null && esLecturaAuditada(eM) ? eM : null,
       auditT: eT != null && esLecturaAuditada(eT) ? eT : null,
       auditN: eN != null && esLecturaAuditada(eN) ? eN : null,
@@ -133,6 +144,23 @@ export default function NeveraChart({
   }
 
   return (
+    <>
+      {/* Leyenda jornadas + corrección */}
+      {hasCorr && (
+        <div className="flex items-center gap-4 px-4 pt-3 pb-1 text-xs text-gray-500 flex-wrap">
+          {JORNADAS.map(j => (
+            <div key={j} className="flex items-center gap-1.5">
+              <span className="w-4 h-0.5 inline-block" style={{ background: J_COLOR[j] }} />
+              <span style={{ color: J_COLOR[j] }} className="font-medium text-[11px]">{J_LABEL[j]}</span>
+            </div>
+          ))}
+          <div className="flex items-center gap-1.5 ml-1">
+            <svg width="16" height="6"><line x1="0" y1="3" x2="16" y2="3" stroke="#6b7280" strokeWidth="1.5" strokeDasharray="4 2"/></svg>
+            <span className="text-gray-400 text-[11px]">Corregido ({factorCorreccion > 0 ? "+" : ""}{factorCorreccion}°C)</span>
+          </div>
+        </div>
+      )}
+
     <ResponsiveContainer width="100%" height={440}>
       <LineChart data={data} margin={{ top: 8, right: 32, left: 8, bottom: 24 }}>
         <CartesianGrid strokeDasharray="2 2" stroke="#e5e7eb" />
@@ -185,7 +213,29 @@ export default function NeveraChart({
             activeDot={{ r: 6 }}
           />
         ))}
+
+        {/* Líneas corregidas (punteadas) — solo cuando factorCorreccion ≠ 0 */}
+        {hasCorr && JORNADAS.map(j => {
+          const corrKey = `${j}_corr` as "M_corr" | "T_corr" | "N_corr";
+          return (
+            <Line
+              key={`${j}_corr`}
+              type="linear"
+              dataKey={corrKey}
+              name={`${J_LABEL[j]} corregido`}
+              stroke={J_COLOR[j]}
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
+              strokeOpacity={0.55}
+              connectNulls={false}
+              dot={false}
+              activeDot={false}
+              legendType="none"
+            />
+          );
+        })}
       </LineChart>
     </ResponsiveContainer>
+    </>
   );
 }
