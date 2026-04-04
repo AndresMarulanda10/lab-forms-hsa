@@ -31,6 +31,14 @@ create table if not exists public.registros_termohigrometria (
   certificado          text not null default '',
   factor_correccion    text not null default '',
   lecturas             jsonb not null default '{}'::jsonb,
+  -- Tres responsables (un firmante por jornada, igual que F-029)
+  responsable_manana   text not null default '',
+  responsable_tarde    text not null default '',
+  responsable_noche    text not null default '',
+  firma_manana         text not null default '',
+  firma_tarde          text not null default '',
+  firma_noche          text not null default '',
+  -- Campos legacy (mantener por compatibilidad)
   responsable          text not null default '',
   firma                text not null default '',
   observaciones        text not null default '',
@@ -91,10 +99,18 @@ create policy "Allow all anon" on public.neveras for all using (true) with check
 create policy "Allow all anon" on public.registros_termohigrometria for all using (true) with check (true);
 create policy "Allow all anon" on public.registros_neveras for all using (true) with check (true);
 
--- ─── Migración: firmas digitales ─────────────────────────────────────────────
--- Ejecutá esto si ya tenés las tablas creadas sin las columnas de firma:
+-- ─── Migración: tres jornadas en termohigrometría ────────────────────────────
+-- Ejecutá esto si ya tenés la tabla creada con el esquema anterior:
 alter table public.registros_termohigrometria
-  add column if not exists firma text not null default '';
+  add column if not exists responsable_manana text not null default '',
+  add column if not exists responsable_tarde  text not null default '',
+  add column if not exists responsable_noche  text not null default '',
+  add column if not exists firma_manana       text not null default '',
+  add column if not exists firma_tarde        text not null default '',
+  add column if not exists firma_noche        text not null default '',
+  add column if not exists firma              text not null default '';
+
+-- ─── Migración: firmas digitales neveras ─────────────────────────────────────
 
 alter table public.registros_neveras
   add column if not exists firma_manana        text not null default '',

@@ -207,6 +207,14 @@ export interface RegistroTermohigrometria {
   certificado: string;
   factor_correccion: string;
   lecturas: LecturasTermohigrometria;
+  // Tres jornadas (igual que F-029)
+  responsable_manana: string;
+  responsable_tarde: string;
+  responsable_noche: string;
+  firma_manana: string;
+  firma_tarde: string;
+  firma_noche: string;
+  // Legacy (compatibilidad)
   responsable: string;
   firma: string;
   observaciones: string;

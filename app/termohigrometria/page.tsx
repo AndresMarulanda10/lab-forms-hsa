@@ -19,7 +19,7 @@ export default function TermohigrometriaPage() {
   const [loading,    setLoading]    = useState(true);
   const [saving,     setSaving]     = useState(false);
   const [firmaModal, setFirmaModal] = useState(false);
-  const [firma,      setFirma]      = useState("");
+  const [firmas,     setFirmas]     = useState({ manana: "", tarde: "", noche: "" });
   const [toast,      setToast]      = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const [tempMin, setTempMin] = useState(15);
   const [tempMax, setTempMax] = useState(30);
@@ -34,7 +34,9 @@ export default function TermohigrometriaPage() {
     ubicacion: "", dispositivo_nombre: "TERMOHIGROMETRO",
     dispositivo_marca: "", dispositivo_modelo: "",
     dispositivo_serial: "", certificado: "",
-    factor_correccion: "0.54", responsable: "", firma: "", observaciones: "",
+    factor_correccion: "0.54",
+    responsable_manana: "", responsable_tarde: "", responsable_noche: "",
+    observaciones: "",
   });
 
   // Ingreso
@@ -57,9 +59,13 @@ export default function TermohigrometriaPage() {
         ubicacion: r.ubicacion, dispositivo_nombre: r.dispositivo_nombre,
         dispositivo_marca: r.dispositivo_marca, dispositivo_modelo: r.dispositivo_modelo,
         dispositivo_serial: r.dispositivo_serial, certificado: r.certificado,
-        factor_correccion: r.factor_correccion, responsable: r.responsable,
-        firma: r.firma ?? "", observaciones: r.observaciones,
+        factor_correccion: r.factor_correccion,
+        responsable_manana: r.responsable_manana ?? "",
+        responsable_tarde:  r.responsable_tarde  ?? "",
+        responsable_noche:  r.responsable_noche  ?? "",
+        observaciones: r.observaciones,
       });
+      setFirmas({ manana: r.firma_manana ?? "", tarde: r.firma_tarde ?? "", noche: r.firma_noche ?? "" });
       const lecs = (r.lecturas || {}) as LecturasTermohigrometria;
       setLecturas(lecs);
       lecturasOriginales.current = lecs;   // ← snapshot
@@ -68,8 +74,11 @@ export default function TermohigrometriaPage() {
         ubicacion: "", dispositivo_nombre: "TERMOHIGROMETRO",
         dispositivo_marca: "", dispositivo_modelo: "",
         dispositivo_serial: "", certificado: "",
-        factor_correccion: "0.54", responsable: "", firma: "", observaciones: "",
+        factor_correccion: "0.54",
+        responsable_manana: "", responsable_tarde: "", responsable_noche: "",
+        observaciones: "",
       });
+      setFirmas({ manana: "", tarde: "", noche: "" });
       setLecturas({});
       lecturasOriginales.current = {};
     }
@@ -105,14 +114,19 @@ export default function TermohigrometriaPage() {
     setFirmaModal(true);
   };
 
-  const handleSaveWithFirma = async ({ firma: f }: { firma: string }) => {
+  const handleSaveWithFirma = async ({ firma: f, jornada }: { firma: string; jornada?: "manana" | "tarde" | "noche" }) => {
     setSaving(true);
-    setFirma(f);
+
+    const jornadaKey = (jornada ?? "manana") as "manana" | "tarde" | "noche";
+    const responsableDeJornada =
+      jornadaKey === "manana" ? info.responsable_manana :
+      jornadaKey === "tarde"  ? info.responsable_tarde  :
+                                info.responsable_noche;
 
     // Enriquecer lecturas con auditoría: timestamp, quien, firma
     const audit = {
       ts: new Date().toISOString(),
-      quien: info.responsable || "—",
+      quien: responsableDeJornada || "—",
       firma: f,
     };
     const lecturasAuditadas = enriquecerLecturasTermohigro(
@@ -121,9 +135,22 @@ export default function TermohigrometriaPage() {
     lecturasOriginales.current = lecturasAuditadas;
     setLecturas(lecturasAuditadas);
 
+    const nuevasFirmas = { ...firmas };
+    nuevasFirmas[jornadaKey] = f;
+    setFirmas(nuevasFirmas);
+
     const res = await fetch("/api/termohigrometria", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ año, mes, ...info, lecturas: lecturasAuditadas, firma: f }),
+      body: JSON.stringify({
+        año, mes, ...info,
+        lecturas: lecturasAuditadas,
+        firma_manana: nuevasFirmas.manana,
+        firma_tarde:  nuevasFirmas.tarde,
+        firma_noche:  nuevasFirmas.noche,
+        // campos legacy vacíos para compatibilidad
+        responsable: responsableDeJornada || "",
+        firma: f,
+      }),
     });
     setSaving(false);
     if (!res.ok) throw new Error((await res.json()).error);
@@ -327,16 +354,32 @@ export default function TermohigrometriaPage() {
               titulo="Humedad Relativa (%)" unidad="%"/>
           </div>
 
-          {/* ── Responsable ─────────────────────────────────────────────────── */}
+          {/* ── Responsables por jornada ────────────────────────────────────── */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs">
-            <div className="grid grid-cols-1 sm:grid-cols-2 divide-x divide-gray-200">
+            <div className="grid grid-cols-1 sm:grid-cols-3 divide-x divide-gray-200">
               <div className="px-4 py-3">
-                <p className="text-gray-400 uppercase tracking-wide font-semibold mb-2 text-[10px]">Responsable del Registro</p>
+                <p className="text-gray-400 uppercase tracking-wide font-semibold mb-2 text-[10px]">Responsable Mañana</p>
                 <input className="w-full border-b border-gray-300 focus:outline-none focus:border-hsa-green pb-1 text-sm"
-                  value={info.responsable}
-                  onChange={e => setInfo(i => ({...i, responsable: e.target.value}))}
+                  value={info.responsable_manana}
+                  onChange={e => setInfo(i => ({...i, responsable_manana: e.target.value}))}
                   placeholder="Nombre y cargo"/>
               </div>
+              <div className="px-4 py-3">
+                <p className="text-gray-400 uppercase tracking-wide font-semibold mb-2 text-[10px]">Responsable Tarde</p>
+                <input className="w-full border-b border-gray-300 focus:outline-none focus:border-hsa-green pb-1 text-sm"
+                  value={info.responsable_tarde}
+                  onChange={e => setInfo(i => ({...i, responsable_tarde: e.target.value}))}
+                  placeholder="Nombre y cargo"/>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-gray-400 uppercase tracking-wide font-semibold mb-2 text-[10px]">Responsable Noche</p>
+                <input className="w-full border-b border-gray-300 focus:outline-none focus:border-hsa-green pb-1 text-sm"
+                  value={info.responsable_noche}
+                  onChange={e => setInfo(i => ({...i, responsable_noche: e.target.value}))}
+                  placeholder="Nombre y cargo"/>
+              </div>
+            </div>
+            <div className="border-t border-gray-200">
               <div className="px-4 py-3">
                 <p className="text-gray-400 uppercase tracking-wide font-semibold mb-2 text-[10px]">Observaciones</p>
                 <input className="w-full border-b border-gray-300 focus:outline-none focus:border-hsa-green pb-1 text-sm"
@@ -346,8 +389,6 @@ export default function TermohigrometriaPage() {
               </div>
             </div>
           </div>
-
-          {/* Botones secundarios — el guardar principal está en la barra de metadatos */}
         </>
       )}
 
@@ -358,7 +399,11 @@ export default function TermohigrometriaPage() {
         open={firmaModal}
         onClose={() => setFirmaModal(false)}
         onConfirm={handleSaveWithFirma}
-        responsable={info.responsable}
+        responsables={{
+          manana: info.responsable_manana,
+          tarde:  info.responsable_tarde,
+          noche:  info.responsable_noche,
+        }}
         titulo="Firmar y guardar — F-021 Termohigrometría"
       />
     </div>
