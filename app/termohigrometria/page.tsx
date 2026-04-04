@@ -128,7 +128,7 @@ export default function TermohigrometriaPage() {
     // 1. Validar responsable de la jornada
     if (!responsableDeJornada(jornadaAdd).trim()) {
       showToast(
-        `Completá el nombre del responsable de ${J_LABEL[jornadaAdd]} antes de ingresar datos.`,
+        `Completa el nombre del responsable de ${J_LABEL[jornadaAdd]} antes de ingresar datos.`,
         "err",
       );
       return;
@@ -138,7 +138,7 @@ export default function TermohigrometriaPage() {
     const temp = parseFloat(inputTemp);
     const max  = getDiasEnMes(mes, año);
     if (isNaN(dia) || dia < 1 || dia > max) { showToast(`Día inválido (1–${max})`, "err"); return; }
-    if (isNaN(temp)) { showToast("Ingresá temperatura", "err"); return; }
+    if (isNaN(temp)) { showToast("Ingresa la temperatura", "err"); return; }
     const humRaw = parseFloat(inputHum);
     const hum = isNaN(humRaw) ? null : humRaw;
 
@@ -202,11 +202,11 @@ export default function TermohigrometriaPage() {
   // ── Pedir firma mensual ────────────────────────────────────────────────────
   const pedirFirmaMensual = () => {
     if (Object.keys(lecturas).length === 0) {
-      showToast("Ingresá al menos una lectura antes de guardar.", "err");
+      showToast("Ingresa al menos una lectura antes de guardar.", "err");
       return;
     }
     if (!info.responsable_manana.trim() && !info.responsable_tarde.trim() && !info.responsable_noche.trim()) {
-      showToast("Completá el nombre de al menos un responsable antes de guardar.", "err");
+      showToast("Completa el nombre de al menos un responsable antes de guardar.", "err");
       return;
     }
     setFirmaModal(true);
@@ -412,7 +412,7 @@ export default function TermohigrometriaPage() {
                 </div>
                 {!responsableDeJornada(jornadaAdd).trim() && (
                   <span className="text-[11px] text-amber-600 font-medium">
-                    ← Completá el responsable de {J_LABEL[jornadaAdd]} para poder agregar lecturas.
+                    ← Completa el responsable de {J_LABEL[jornadaAdd]} para poder agregar lecturas.
                   </span>
                 )}
               </div>

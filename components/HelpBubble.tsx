@@ -14,7 +14,7 @@ const SLIDES = [
     bg: "bg-hsa-green",
     icon: <Settings size={26} className="text-white"/>,
     title: "Bienvenido al Sistema de Registros",
-    body: "Plataforma digital del Laboratorio Clínico del E.S.E. Hospital San Antonio de Chía. Registrá, visualizá y exportá los formularios F-021 y F-029 sin papel.",
+    body: "Plataforma digital del Laboratorio Clínico del E.S.E. Hospital San Antonio de Chía. Registra, visualiza y exporta los formularios F-021 y F-029 sin papel.",
     visual: (
       <div className="flex justify-center gap-3 mt-4">
         <div className="flex flex-col items-center gap-1.5">
@@ -36,7 +36,7 @@ const SLIDES = [
     bg: "bg-amber-500",
     icon: <PenLine size={26} className="text-white"/>,
     title: "Firmar y agregar lecturas",
-    body: "Seleccioná la jornada (Mañana, Tarde o Noche), escribí el día y el valor. Al presionar «Firmar y agregar», se te pide tu firma y el dato se guarda automáticamente. Cada lectura queda trazable con responsable, hora y firma.",
+    body: "Selecciona la jornada (Mañana, Tarde o Noche), escribe el día y el valor. Al presionar «Firmar y agregar», se solicita tu firma y el dato se guarda automáticamente. Cada lectura queda trazable con responsable, hora y firma.",
     visual: (
       <div className="flex flex-col items-center gap-2 mt-3">
         <div className="flex items-center gap-2 px-3 py-2 bg-white/20 rounded-xl text-white text-xs font-semibold">

@@ -119,18 +119,18 @@ export default function FirmaGuardadoModal({
   const handleConfirm = async () => {
     // 1. Validar que haya nombre para la jornada seleccionada
     if (responsables && !responsables[jornada]?.trim()) {
-      setError(`Completá el nombre del responsable de ${
+      setError(`Completa el nombre del responsable de ${
         jornada === "manana" ? "Mañana" : jornada === "tarde" ? "Tarde" : "Noche"
       } antes de firmar.`);
       return;
     }
     // 2. Validar que haya nombre para el responsable único (F-021 sin jornadas)
     if (responsable !== undefined && !responsable?.trim()) {
-      setError("Completá el nombre del responsable antes de firmar.");
+      setError("Completa el nombre del responsable antes de firmar.");
       return;
     }
     // 3. Validar que haya firma dibujada
-    if (!hasStroke) { setError("Dibujá tu firma antes de guardar."); return; }
+    if (!hasStroke) { setError("Dibuja tu firma antes de guardar."); return; }
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -241,7 +241,7 @@ export default function FirmaGuardadoModal({
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none gap-1">
                   <Pen size={18} className="text-gray-300"/>
                   <span className="text-[11px] text-gray-300">
-                    Dibujá tu firma
+                    Dibuja tu firma
                   </span>
                 </div>
               )}
