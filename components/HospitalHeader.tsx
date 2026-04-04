@@ -63,13 +63,12 @@ export default function HospitalHeader({
             {/* Col 4 – Sabana Centro (rowspan 2) */}
             <td rowSpan={2}
               className="border border-gray-400 p-2 w-[16%] align-middle text-center">
-              <p className="text-[6.5px] font-semibold text-gray-500 uppercase tracking-wide leading-tight">
-                EMPRESA SOCIAL DEL ESTADO
-              </p>
-              <p className="text-[6px] text-gray-400 leading-tight">REGIÓN DE SALUD</p>
-              <p className="text-[10px] font-black text-red-600 leading-tight mt-0.5 tracking-wide">
-                SABANA CENTRO
-              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/sabana_centro.jpeg"
+                alt="ESE Región de Salud Sabana Centro"
+                className="h-16 w-auto mx-auto object-contain"
+              />
             </td>
           </tr>
 

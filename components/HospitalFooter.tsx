@@ -25,42 +25,23 @@ export default function HospitalFooter() {
         </div>
 
         {/* ── Gobernación de Cundinamarca ───────────── */}
-        <div className="flex flex-col items-center justify-center px-6 py-2 gap-0.5">
-          {/* Sello circular simplificado */}
-          <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" className="h-10 w-10">
-            <circle cx="24" cy="24" r="23" fill="#1a2a5e"/>
-            <circle cx="24" cy="24" r="19" fill="none" stroke="#c8a951" strokeWidth="1.2"/>
-            <circle cx="24" cy="20" r="3.5" fill="white"/>
-            <ellipse cx="24" cy="29" rx="3.5" ry="5" fill="white"/>
-            <path d="M20.5 25 C16 23 9 25 6 30 C10 27.5 16 26 20.5 27" fill="white"/>
-            <path d="M27.5 25 C32 23 39 25 42 30 C38 27.5 32 26 27.5 27" fill="white"/>
-            <path d="M21 33 L24 40 L27 33" fill="white"/>
-            <path d="M22.5 19.5 L24 22 L25.5 19.5" fill="#c8a951"/>
-          </svg>
-          <p className="text-[7.5px] italic text-gray-500 leading-tight">Gobernación de</p>
-          <p className="text-[9px] font-bold text-[#1a2a5e] leading-tight">Cundinamarca</p>
+        <div className="flex flex-col items-center justify-center px-4 py-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/gobernacion_cundinamarca.jpeg"
+            alt="Gobernación de Cundinamarca"
+            className="h-12 w-auto object-contain"
+          />
         </div>
 
         {/* ── Red Global de Hospitales Verdes ──────── */}
-        <div className="flex flex-col items-center justify-center px-6 py-2 gap-1">
-          {/* Grilla 4×4 */}
-          <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" className="h-9 w-9">
-            {[
-              "#1a7a4a","#2ea65a","#0f5c38","#4ab870",
-              "#1565a0","#1a7a4a","#2ea65a","#0f5c38",
-              "#0f5c38","#1565a0","#1a7a4a","#4ab870",
-              "#4ab870","#0f5c38","#1565a0","#1a7a4a",
-            ].map((color, i) => (
-              <rect key={i}
-                x={(i % 4) * 10.5} y={Math.floor(i / 4) * 10.5}
-                width={9} height={9} fill={color} rx="1"/>
-            ))}
-          </svg>
-          <div className="text-center leading-tight">
-            <p className="text-[7px] text-gray-500">Red <span className="font-black text-gray-700">GLOBAL</span></p>
-            <p className="text-[7px] text-gray-500">de HOSPITALES</p>
-            <p className="text-[7px] font-bold text-hsa-green">VERDES y SALUDABLES</p>
-          </div>
+        <div className="flex flex-col items-center justify-center px-4 py-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/red_global_hospitales.jpeg"
+            alt="Red Global de Hospitales Verdes y Saludables"
+            className="h-12 w-auto object-contain"
+          />
         </div>
 
       </div>
