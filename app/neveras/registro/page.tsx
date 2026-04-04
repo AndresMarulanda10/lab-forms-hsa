@@ -3,22 +3,34 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   ChevronLeft, ChevronRight, Printer, Loader2,
-  CheckCircle, AlertCircle, Refrigerator, Plus, PenLine,
+  CheckCircle, AlertCircle, Refrigerator, Plus, PenLine, Save,
 } from "lucide-react";
 import Link from "next/link";
 import HospitalHeader from "@/components/HospitalHeader";
 import HospitalFooter from "@/components/HospitalFooter";
 import NeveraChart from "@/components/NeveraChart";
 import FirmaGuardadoModal from "@/components/FirmaGuardadoModal";
-import type { Nevera, RegistroNevera, LecturasNevera, JornadaKey, Jornada } from "@/lib/types";
+import type {
+  Nevera, RegistroNevera, LecturasNevera,
+  JornadaKey, Jornada, LecturaAuditada, LecturaHistorial,
+} from "@/lib/types";
 import {
-  MESES, getDiasEnMes, enriquecerLecturas, lecturaClave,
+  MESES, getDiasEnMes, lecturaClave,
+  valorDeLectura, esLecturaAuditada,
 } from "@/lib/types";
 
 // ─── Colores y etiquetas por jornada ─────────────────────────────────────────
 const J_COLOR: Record<Jornada, string> = { M: "#006b3c", T: "#d97706", N: "#4338ca" };
 const J_LABEL: Record<Jornada, string> = { M: "Mañana", T: "Tarde", N: "Noche" };
 const JORNADAS: Jornada[] = ["M", "T", "N"];
+
+/** Jornada (M/T/N) → JornadaKey (manana/tarde/noche) */
+const toJornadaKey = (j: Jornada): JornadaKey =>
+  j === "M" ? "manana" : j === "T" ? "tarde" : "noche";
+
+/** JornadaKey → Jornada */
+const toJornada = (k: JornadaKey): Jornada =>
+  k === "manana" ? "M" : k === "tarde" ? "T" : "N";
 
 export default function NeverasRegistroPage() {
   const now = new Date();
@@ -28,25 +40,29 @@ export default function NeverasRegistroPage() {
   const [selectedNevera, setSelectedNevera] = useState<Nevera | null>(null);
   const [loading,        setLoading]        = useState(true);
   const [saving,         setSaving]         = useState(false);
-  const [firmaModal,     setFirmaModal]     = useState(false);
-  const [firmas,         setFirmas]         = useState({ manana: "", tarde: "", noche: "" });
   const [toast,          setToast]          = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const [rangoMin, setRangoMin] = useState(2);
   const [rangoMax, setRangoMax] = useState(8);
 
   const [lecturas, setLecturas] = useState<LecturasNevera>({});
   const lecturasOriginales = useRef<LecturasNevera>({});
+  const [firmas, setFirmas] = useState({ manana: "", tarde: "", noche: "" });
   const [info, setInfo] = useState({
-    marca: "", modelo: "", serial: "", ubicacion: "", certificado: "",
+    marca: "", modelo: "", serial: "", certificado: "",
     factor_correccion: "0.54",
     responsable_manana: "", responsable_tarde: "", responsable_noche: "",
     fecha_limpieza: "", observaciones: "",
   });
 
-  // ── Ingreso ────────────────────────────────────────────────────────────────
-  const [jornadaAdd, setJornadaAdd] = useState<Jornada>("M");
-  const [inputDia,   setInputDia]   = useState(String(now.getDate()));
-  const [inputTemp,  setInputTemp]  = useState("");
+  // ── Ingreso por lectura ────────────────────────────────────────────────────
+  const [jornadaAdd,    setJornadaAdd]    = useState<Jornada>("M");
+  const [inputDia,      setInputDia]      = useState(String(now.getDate()));
+  const [inputTemp,     setInputTemp]     = useState("");
+  // Modal para firma por lectura individual
+  const [pendingAdd,    setPendingAdd]    = useState<{ dia: number; temp: number } | null>(null);
+  const [firmaModalAdd, setFirmaModalAdd] = useState(false);
+  // Modal para firma mensual (responsables + dispositivo + observaciones)
+  const [firmaModal,    setFirmaModal]    = useState(false);
 
   const showToast = (msg: string, type: "ok" | "err" = "ok") => {
     setToast({ msg, type });
@@ -75,6 +91,7 @@ export default function NeverasRegistroPage() {
       const lecs = (r.lecturas || {}) as LecturasNevera;
       setLecturas(lecs);
       lecturasOriginales.current = lecs;
+      setFirmas({ manana: r.firma_manana ?? "", tarde: r.firma_tarde ?? "", noche: r.firma_noche ?? "" });
       setInfo(prev => ({
         ...prev,
         marca:               r.dispositivo_marca   ?? "",
@@ -91,6 +108,7 @@ export default function NeverasRegistroPage() {
     } else {
       setLecturas({});
       lecturasOriginales.current = {};
+      setFirmas({ manana: "", tarde: "", noche: "" });
       setInfo(prev => ({
         ...prev,
         responsable_manana: "", responsable_tarde: "", responsable_noche: "",
@@ -108,7 +126,26 @@ export default function NeverasRegistroPage() {
     j === "M" ? info.responsable_manana :
     j === "T" ? info.responsable_tarde  : info.responsable_noche;
 
-  // ── Agregar lectura ────────────────────────────────────────────────────────
+  /** Construye el objeto de save para la API */
+  const buildSaveBody = (lecs: LecturasNevera, fs: typeof firmas) => ({
+    nevera_id: selectedNevera!.id, año, mes,
+    lecturas: lecs,
+    dispositivo_marca:  info.marca,
+    dispositivo_modelo: info.modelo,
+    dispositivo_serial: info.serial,
+    certificado:        info.certificado,
+    factor_correccion:  info.factor_correccion,
+    responsable_manana: info.responsable_manana,
+    responsable_tarde:  info.responsable_tarde,
+    responsable_noche:  info.responsable_noche,
+    fecha_limpieza:     info.fecha_limpieza || null,
+    observaciones:      info.observaciones,
+    firma_manana:       fs.manana,
+    firma_tarde:        fs.tarde,
+    firma_noche:        fs.noche,
+  });
+
+  // ── Agregar lectura: valida y abre modal de firma ─────────────────────────
   const agregar = () => {
     // 1. Validar responsable de la jornada seleccionada
     if (!responsableDeJornada(jornadaAdd).trim()) {
@@ -125,19 +162,76 @@ export default function NeverasRegistroPage() {
     if (isNaN(dia) || dia < 1 || dia > max) { showToast(`Día inválido (1–${max})`, "err"); return; }
     if (isNaN(temp)) { showToast("Ingresá una temperatura", "err"); return; }
 
-    // 3. Guardar como "dia_Jornada" (ej: "5_M")
-    setLecturas(prev => ({ ...prev, [lecturaClave(dia, jornadaAdd)]: temp }));
-    setInputTemp("");
-    setInputDia(String(dia < max ? dia + 1 : dia));
+    // 3. Guardar pendiente y abrir modal de firma
+    setPendingAdd({ dia, temp });
+    setFirmaModalAdd(true);
   };
 
-  // ── Pedir firma ────────────────────────────────────────────────────────────
-  const pedirFirma = () => {
-    if (!selectedNevera) return;
-    if (Object.keys(lecturas).length === 0) {
-      showToast("Ingresá al menos una lectura antes de guardar.", "err");
-      return;
+  // ── Confirmar firma por lectura individual: crea LecturaAuditada + guarda ─
+  const handleAddWithFirma = async ({ firma, jornada }: { firma: string; jornada?: JornadaKey }) => {
+    if (!pendingAdd || !selectedNevera) return;
+
+    const jornadaKey = jornada ?? toJornadaKey(jornadaAdd);
+    const jornadaSuf = toJornada(jornadaKey);
+    const clave      = lecturaClave(pendingAdd.dia, jornadaSuf);
+    const resp       = responsableDeJornada(jornadaSuf);
+
+    // Construir historial previo si existía una lectura para ese día/jornada
+    const entryExistente = lecturas[clave];
+    let prevAnterior: LecturaHistorial[] = [];
+    let prevEntry: LecturaHistorial | undefined;
+
+    if (entryExistente !== undefined) {
+      const vExistente = valorDeLectura(entryExistente);
+      if (esLecturaAuditada(entryExistente)) {
+        prevAnterior = entryExistente.prev ?? [];
+        if (vExistente !== pendingAdd.temp) {
+          prevEntry = {
+            v: entryExistente.v, ts: entryExistente.ts,
+            quien: entryExistente.quien, jornada: entryExistente.jornada,
+            firma: entryExistente.firma,
+          };
+        }
+      } else if (vExistente !== null && vExistente !== pendingAdd.temp) {
+        // Era número legacy
+        prevEntry = {
+          v: vExistente, ts: new Date().toISOString(),
+          quien: "—", jornada: jornadaKey, firma: "",
+        };
+      }
     }
+
+    const nuevaLectura: LecturaAuditada = {
+      v: pendingAdd.temp,
+      ts: new Date().toISOString(),
+      quien: resp || "—",
+      jornada: jornadaKey,
+      firma,
+      prev: prevEntry ? [...prevAnterior, prevEntry] : prevAnterior,
+    };
+
+    const nuevasLecturas: LecturasNevera = { ...lecturas, [clave]: nuevaLectura };
+    setLecturas(nuevasLecturas);
+    lecturasOriginales.current = nuevasLecturas; // actualizar snapshot
+
+    // Guardar inmediatamente en DB
+    const res = await fetch("/api/neveras-registros", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildSaveBody(nuevasLecturas, firmas)),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+
+    // Limpiar inputs y avanzar día
+    const nextDia = pendingAdd.dia < getDiasEnMes(mes, año) ? pendingAdd.dia + 1 : pendingAdd.dia;
+    setPendingAdd(null);
+    setInputTemp("");
+    setInputDia(String(nextDia));
+    showToast(`Lectura del día ${pendingAdd.dia} registrada con firma ✓`);
+  };
+
+  // ── Guardar mensual: responsables, dispositivo, observaciones, firma mensual
+  const pedirFirmaMensual = () => {
+    if (!selectedNevera) return;
     if (!info.responsable_manana.trim() && !info.responsable_tarde.trim() && !info.responsable_noche.trim()) {
       showToast("Completá el nombre de al menos un responsable antes de guardar.", "err");
       return;
@@ -145,49 +239,20 @@ export default function NeverasRegistroPage() {
     setFirmaModal(true);
   };
 
-  // ── Guardar con firma ──────────────────────────────────────────────────────
-  const handleSaveWithFirma = async ({ firma, jornada }: { firma: string; jornada?: JornadaKey }) => {
+  const handleSaveMensual = async ({ firma, jornada }: { firma: string; jornada?: JornadaKey }) => {
     if (!selectedNevera) return;
     setSaving(true);
-
-    const jornadaKey = (jornada ?? "manana") as JornadaKey;
-    const resp =
-      jornadaKey === "manana" ? info.responsable_manana :
-      jornadaKey === "tarde"  ? info.responsable_tarde  :
-                                info.responsable_noche;
-
-    const audit = { ts: new Date().toISOString(), quien: resp || "—", jornada: jornadaKey, firma };
-    const lecturasAuditadas = enriquecerLecturas(lecturas, lecturasOriginales.current, audit);
-    lecturasOriginales.current = lecturasAuditadas;
-    setLecturas(lecturasAuditadas);
-
-    const nuevasFirmas = { ...firmas };
-    if (jornada) nuevasFirmas[jornada] = firma;
+    const jornadaKey = jornada ?? "manana";
+    const nuevasFirmas = { ...firmas, [jornadaKey]: firma };
     setFirmas(nuevasFirmas);
 
     const res = await fetch("/api/neveras-registros", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nevera_id: selectedNevera.id, año, mes,
-        lecturas: lecturasAuditadas,
-        dispositivo_marca:  info.marca,
-        dispositivo_modelo: info.modelo,
-        dispositivo_serial: info.serial,
-        certificado:        info.certificado,
-        factor_correccion:  info.factor_correccion,
-        responsable_manana: info.responsable_manana,
-        responsable_tarde:  info.responsable_tarde,
-        responsable_noche:  info.responsable_noche,
-        fecha_limpieza:     info.fecha_limpieza || null,
-        observaciones:      info.observaciones,
-        firma_manana:       nuevasFirmas.manana,
-        firma_tarde:        nuevasFirmas.tarde,
-        firma_noche:        nuevasFirmas.noche,
-      }),
+      body: JSON.stringify(buildSaveBody(lecturas, nuevasFirmas)),
     });
     setSaving(false);
     if (!res.ok) throw new Error((await res.json()).error);
-    showToast("Registro guardado con firma ✓");
+    showToast("Registro mensual guardado ✓");
   };
 
   // ── Navegación de mes ──────────────────────────────────────────────────────
@@ -200,7 +265,7 @@ export default function NeverasRegistroPage() {
 
   const fc = parseFloat(info.factor_correccion) || 0;
 
-  // ── Datos de prueba con 3 jornadas ────────────────────────────────────────
+  // Datos de prueba: genera lecturas sin firma (cubiertas por la firma mensual)
   const cargarDatosPrueba = () => {
     const nuevas: LecturasNevera = {};
     const dias = getDiasEnMes(mes, año);
@@ -315,13 +380,14 @@ export default function NeverasRegistroPage() {
               className="flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-[11px] font-semibold hover:bg-amber-200 transition-colors">
               🧪 Prueba
             </button>
-            <button onClick={pedirFirma} disabled={saving || loading}
+            {/* Guardar mensual: responsables + dispositivo + firma mensual */}
+            <button onClick={pedirFirmaMensual} disabled={saving || loading}
               className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
               style={{ backgroundColor: "#006b3c" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#004d2a"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#006b3c"; }}>
-              {saving ? <Loader2 size={11} className="animate-spin"/> : <PenLine size={11}/>}
-              {saving ? "Guardando…" : "Firmar y guardar"}
+              {saving ? <Loader2 size={11} className="animate-spin"/> : <Save size={11}/>}
+              {saving ? "Guardando…" : "Guardar mes"}
             </button>
             <button onClick={() => window.print()}
               className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors no-print">
@@ -358,8 +424,9 @@ export default function NeverasRegistroPage() {
             rangoMin={rangoMin} rangoMax={rangoMax}
             factorCorreccion={fc} />
 
-          {/* ─── Ingreso de lectura ──────────────────────────────────────── */}
+          {/* ─── Ingreso de lectura (firma requerida por entrada) ────────── */}
           <div className="border-t border-gray-100 bg-gray-50/50 no-print">
+
             {/* Selector de jornada */}
             <div className="flex items-center gap-3 px-4 pt-3 pb-2 flex-wrap">
               <span className="text-xs text-gray-400 font-medium">Jornada:</span>
@@ -367,17 +434,13 @@ export default function NeverasRegistroPage() {
                 {JORNADAS.map(j => {
                   const hasResp = responsableDeJornada(j).trim() !== "";
                   return (
-                    <button
-                      key={j}
-                      onClick={() => setJornadaAdd(j)}
+                    <button key={j} onClick={() => setJornadaAdd(j)}
                       className={`flex items-center gap-1 px-3 py-1 rounded-md text-[11px] font-semibold transition-all ${
                         jornadaAdd === j ? "bg-white shadow-sm" : "text-gray-400 hover:text-gray-600"
                       }`}
                       style={jornadaAdd === j ? { color: J_COLOR[j] } : {}}>
                       {J_LABEL[j]}
-                      {!hasResp && (
-                        <span className="text-amber-400 text-[10px]" title="Sin responsable">⚠</span>
-                      )}
+                      {!hasResp && <span className="text-amber-400 text-[10px]">⚠</span>}
                     </button>
                   );
                 })}
@@ -389,7 +452,7 @@ export default function NeverasRegistroPage() {
               )}
             </div>
 
-            {/* Inputs */}
+            {/* Inputs + botón Firmar y agregar */}
             <div className="flex items-center gap-3 px-4 pb-3 flex-wrap">
               <div className="flex items-center gap-1">
                 <span className="text-xs text-gray-500">Día</span>
@@ -411,10 +474,12 @@ export default function NeverasRegistroPage() {
                   → {(parseFloat(inputTemp) + fc).toFixed(1)}°C corregida
                 </span>
               )}
+              {/* Botón principal: abre modal de firma antes de registrar */}
               <button onClick={agregar} disabled={!inputTemp}
-                className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-40"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-40"
                 style={{ backgroundColor: inputTemp ? J_COLOR[jornadaAdd] : "#9ca3af" }}>
-                <Plus size={12}/> Agregar
+                <PenLine size={12}/>
+                Firmar y agregar
               </button>
             </div>
           </div>
@@ -462,16 +527,35 @@ export default function NeverasRegistroPage() {
 
       <HospitalFooter />
 
-      {/* ── Modal de firma ────────────────────────────────────────────────── */}
+      {/* ── Modal de firma POR LECTURA ───────────────────────────────────── */}
       <FirmaGuardadoModal
-        open={firmaModal}
-        onClose={() => setFirmaModal(false)}
-        onConfirm={handleSaveWithFirma}
+        open={firmaModalAdd}
+        onClose={() => { setFirmaModalAdd(false); setPendingAdd(null); }}
+        onConfirm={handleAddWithFirma}
+        jornadaDefault={toJornadaKey(jornadaAdd)}
         responsables={{
           manana: info.responsable_manana,
           tarde:  info.responsable_tarde,
           noche:  info.responsable_noche,
         }}
+        titulo={
+          pendingAdd
+            ? `Firmar lectura — Día ${pendingAdd.dia} · ${J_LABEL[jornadaAdd]} · ${pendingAdd.temp}°C`
+            : "Firmar lectura"
+        }
+      />
+
+      {/* ── Modal de firma MENSUAL (responsables + dispositivo) ──────────── */}
+      <FirmaGuardadoModal
+        open={firmaModal}
+        onClose={() => setFirmaModal(false)}
+        onConfirm={handleSaveMensual}
+        responsables={{
+          manana: info.responsable_manana,
+          tarde:  info.responsable_tarde,
+          noche:  info.responsable_noche,
+        }}
+        titulo="Guardar registro mensual — F-029"
       />
     </div>
   );

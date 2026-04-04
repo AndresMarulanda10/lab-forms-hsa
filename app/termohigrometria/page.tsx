@@ -3,13 +3,16 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   ChevronLeft, ChevronRight, Printer, Loader2,
-  CheckCircle, AlertCircle, Plus, PenLine,
+  CheckCircle, AlertCircle, PenLine,
 } from "lucide-react";
 import HospitalHeader from "@/components/HospitalHeader";
 import HospitalFooter from "@/components/HospitalFooter";
 import RegistroChart from "@/components/RegistroChart";
 import FirmaGuardadoModal from "@/components/FirmaGuardadoModal";
-import type { LecturasTermohigrometria, RegistroTermohigrometria } from "@/lib/types";
+import type {
+  LecturasTermohigrometria, LecturaDiaTermohigro,
+  RegistroTermohigrometria, JornadaKey,
+} from "@/lib/types";
 import { MESES, getDiasEnMes, enriquecerLecturasTermohigro } from "@/lib/types";
 
 // ─── Colores y etiquetas de jornada ──────────────────────────────────────────
@@ -18,15 +21,21 @@ const J_COLOR: Record<J, string> = { M: "#006b3c", T: "#d97706", N: "#4338ca" };
 const J_LABEL: Record<J, string> = { M: "Mañana", T: "Tarde", N: "Noche" };
 const JORNADAS: J[] = ["M", "T", "N"];
 
+// Mappers entre J y JornadaKey
+const toJornadaKey = (j: J): JornadaKey =>
+  j === "M" ? "manana" : j === "T" ? "tarde" : "noche";
+
 export default function TermohigrometriaPage() {
   const now = new Date();
   const [año, setAño] = useState(now.getFullYear());
   const [mes,  setMes]  = useState(now.getMonth() + 1);
-  const [loading,    setLoading]    = useState(true);
-  const [saving,     setSaving]     = useState(false);
-  const [firmaModal, setFirmaModal] = useState(false);
-  const [firmas,     setFirmas]     = useState({ manana: "", tarde: "", noche: "" });
-  const [toast,      setToast]      = useState<{ msg: string; type: "ok" | "err" } | null>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [saving,       setSaving]       = useState(false);
+  const [firmaModal,   setFirmaModal]   = useState(false);
+  const [firmaModalAdd, setFirmaModalAdd] = useState(false);
+  const [pendingAdd,   setPendingAdd]   = useState<{ dia: number; temp: number; hum: number | null } | null>(null);
+  const [firmas,       setFirmas]       = useState({ manana: "", tarde: "", noche: "" });
+  const [toast,        setToast]        = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const [tempMin, setTempMin] = useState(15);
   const [tempMax, setTempMax] = useState(30);
   const [humMin,  setHumMin]  = useState(40);
@@ -98,7 +107,23 @@ export default function TermohigrometriaPage() {
     j === "M" ? info.responsable_manana :
     j === "T" ? info.responsable_tarde  : info.responsable_noche;
 
-  // ── Agregar lectura ────────────────────────────────────────────────────────
+  // ── Helper para armar el body de guardado ─────────────────────────────────
+  const buildSaveBody = (
+    lecs: LecturasTermohigrometria,
+    fs: typeof firmas,
+    resp: string,
+    firma: string,
+  ) => ({
+    año, mes, ...info,
+    lecturas: lecs,
+    firma_manana: fs.manana,
+    firma_tarde:  fs.tarde,
+    firma_noche:  fs.noche,
+    responsable:  resp,
+    firma,
+  });
+
+  // ── Agregar lectura (abre modal de firma por entrada) ─────────────────────
   const agregar = () => {
     // 1. Validar responsable de la jornada
     if (!responsableDeJornada(jornadaAdd).trim()) {
@@ -114,21 +139,68 @@ export default function TermohigrometriaPage() {
     const max  = getDiasEnMes(mes, año);
     if (isNaN(dia) || dia < 1 || dia > max) { showToast(`Día inválido (1–${max})`, "err"); return; }
     if (isNaN(temp)) { showToast("Ingresá temperatura", "err"); return; }
-    const hum = parseFloat(inputHum);
+    const humRaw = parseFloat(inputHum);
+    const hum = isNaN(humRaw) ? null : humRaw;
 
-    // 3. Guardar como "dia_Jornada" (ej: "5_M")
+    // 3. Guardar pending y abrir modal de firma
+    setPendingAdd({ dia, temp, hum });
+    setFirmaModalAdd(true);
+  };
+
+  // ── Confirmar lectura con firma (auto-guarda en DB) ───────────────────────
+  const handleAddWithFirma = async ({ firma }: { firma: string; jornada?: JornadaKey }) => {
+    if (!pendingAdd) return;
+    const { dia, temp, hum } = pendingAdd;
     const clave = `${dia}_${jornadaAdd}`;
-    setLecturas(prev => ({
-      ...prev,
-      [clave]: { temp, hum: isNaN(hum) ? null : hum },
-    }));
+    const resp  = responsableDeJornada(jornadaAdd);
+    const ts    = new Date().toISOString();
+
+    // Construir historial previo si el día ya tenía datos
+    const entryExistente = lecturas[clave];
+    const prevEntry: LecturaDiaTermohigro["prev"][0] | null =
+      (entryExistente?.temp != null || entryExistente?.hum != null)
+        ? {
+            temp:  entryExistente.temp,
+            hum:   entryExistente.hum,
+            ts:    entryExistente.ts,
+            quien: entryExistente.quien,
+            firma: entryExistente.firma,
+          }
+        : null;
+    const prevAnterior = entryExistente?.prev ?? [];
+
+    const nuevaEntrada: LecturaDiaTermohigro = {
+      temp,
+      hum,
+      ts,
+      quien: resp || "—",
+      firma,
+      prev: prevEntry ? [...prevAnterior, prevEntry] : prevAnterior,
+    };
+
+    const nuevasLecturas = { ...lecturas, [clave]: nuevaEntrada };
+    setLecturas(nuevasLecturas);
+    lecturasOriginales.current = nuevasLecturas;
+
+    // Auto-guardar en DB
+    const res = await fetch("/api/termohigrometria", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildSaveBody(nuevasLecturas, firmas, resp || "—", firma)),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+
+    // Limpiar inputs y avanzar día
+    const max = getDiasEnMes(mes, año);
     setInputTemp("");
     setInputHum("");
     setInputDia(String(dia < max ? dia + 1 : dia));
+    setPendingAdd(null);
+    showToast(`Lectura día ${dia} · ${J_LABEL[jornadaAdd]} guardada con firma ✓`);
   };
 
-  // ── Pedir firma ────────────────────────────────────────────────────────────
-  const pedirFirma = () => {
+  // ── Pedir firma mensual ────────────────────────────────────────────────────
+  const pedirFirmaMensual = () => {
     if (Object.keys(lecturas).length === 0) {
       showToast("Ingresá al menos una lectura antes de guardar.", "err");
       return;
@@ -140,11 +212,11 @@ export default function TermohigrometriaPage() {
     setFirmaModal(true);
   };
 
-  // ── Guardar con firma ──────────────────────────────────────────────────────
-  const handleSaveWithFirma = async ({ firma: f, jornada }: { firma: string; jornada?: "manana" | "tarde" | "noche" }) => {
+  // ── Guardar mes con firma ──────────────────────────────────────────────────
+  const handleSaveMensual = async ({ firma: f, jornada }: { firma: string; jornada?: JornadaKey }) => {
     setSaving(true);
 
-    const jornadaKey = (jornada ?? "manana") as "manana" | "tarde" | "noche";
+    const jornadaKey = (jornada ?? "manana") as JornadaKey;
     const resp =
       jornadaKey === "manana" ? info.responsable_manana :
       jornadaKey === "tarde"  ? info.responsable_tarde  :
@@ -155,21 +227,12 @@ export default function TermohigrometriaPage() {
     lecturasOriginales.current = lecturasAuditadas;
     setLecturas(lecturasAuditadas);
 
-    const nuevasFirmas = { ...firmas };
-    nuevasFirmas[jornadaKey] = f;
+    const nuevasFirmas = { ...firmas, [jornadaKey]: f };
     setFirmas(nuevasFirmas);
 
     const res = await fetch("/api/termohigrometria", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        año, mes, ...info,
-        lecturas: lecturasAuditadas,
-        firma_manana: nuevasFirmas.manana,
-        firma_tarde:  nuevasFirmas.tarde,
-        firma_noche:  nuevasFirmas.noche,
-        responsable: resp || "",
-        firma: f,
-      }),
+      body: JSON.stringify(buildSaveBody(lecturasAuditadas, nuevasFirmas, resp || "", f)),
     });
     setSaving(false);
     if (!res.ok) throw new Error((await res.json()).error);
@@ -296,13 +359,13 @@ export default function TermohigrometriaPage() {
               className="flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-[11px] font-semibold hover:bg-amber-200 transition-colors">
               🧪 Prueba
             </button>
-            <button onClick={pedirFirma} disabled={saving || loading}
+            <button onClick={pedirFirmaMensual} disabled={saving || loading}
               className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
               style={{ backgroundColor: "#006b3c" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#004d2a"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#006b3c"; }}>
               {saving ? <Loader2 size={11} className="animate-spin"/> : <PenLine size={11}/>}
-              {saving ? "Guardando…" : "Firmar y guardar"}
+              {saving ? "Guardando…" : "Guardar mes"}
             </button>
             <button onClick={() => window.print()}
               className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors no-print">
@@ -385,9 +448,9 @@ export default function TermohigrometriaPage() {
                   </span>
                 )}
                 <button onClick={agregar} disabled={!inputTemp}
-                  className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-xs font-semibold disabled:opacity-40"
+                  className="flex items-center gap-1 px-3 py-1.5 text-white rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
                   style={{ backgroundColor: inputTemp ? J_COLOR[jornadaAdd] : "#9ca3af" }}>
-                  <Plus size={12}/> Agregar
+                  <PenLine size={12}/> Firmar y agregar
                 </button>
               </div>
             </div>
@@ -438,17 +501,31 @@ export default function TermohigrometriaPage() {
 
       <HospitalFooter/>
 
-      {/* ── Modal de firma ────────────────────────────────────────────────── */}
+      {/* ── Modal de firma por entrada ────────────────────────────────────── */}
+      <FirmaGuardadoModal
+        open={firmaModalAdd}
+        onClose={() => { setFirmaModalAdd(false); setPendingAdd(null); }}
+        onConfirm={handleAddWithFirma}
+        responsable={responsableDeJornada(jornadaAdd)}
+        jornadaDefault={toJornadaKey(jornadaAdd)}
+        titulo={
+          pendingAdd
+            ? `Firmar lectura — Día ${pendingAdd.dia} · ${J_LABEL[jornadaAdd]} · ${pendingAdd.temp}°C${pendingAdd.hum != null ? ` · ${pendingAdd.hum}%` : ""}`
+            : "Firmar lectura"
+        }
+      />
+
+      {/* ── Modal de firma mensual ────────────────────────────────────────── */}
       <FirmaGuardadoModal
         open={firmaModal}
         onClose={() => setFirmaModal(false)}
-        onConfirm={handleSaveWithFirma}
+        onConfirm={handleSaveMensual}
         responsables={{
           manana: info.responsable_manana,
           tarde:  info.responsable_tarde,
           noche:  info.responsable_noche,
         }}
-        titulo="Firmar y guardar — F-021 Termohigrometría"
+        titulo="Guardar mes — F-021 Termohigrometría"
       />
     </div>
   );

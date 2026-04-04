@@ -25,6 +25,8 @@ interface Props {
   responsable?: string;
   /** Título del modal */
   titulo?: string;
+  /** Pre-selecciona la jornada al abrir (útil para firma por lectura individual) */
+  jornadaDefault?: Jornada;
 }
 
 const JORNADAS: { key: Jornada; label: string; color: string }[] = [
@@ -34,7 +36,7 @@ const JORNADAS: { key: Jornada; label: string; color: string }[] = [
 ];
 
 export default function FirmaGuardadoModal({
-  open, onClose, onConfirm, responsables, responsable, titulo,
+  open, onClose, onConfirm, responsables, responsable, titulo, jornadaDefault,
 }: Props) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const lastPos      = useRef<{ x: number; y: number } | null>(null);
@@ -50,10 +52,10 @@ export default function FirmaGuardadoModal({
       clearCanvas();
       setError("");
       setSaving(false);
-      setJornada("manana");
+      setJornada(jornadaDefault ?? "manana");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, jornadaDefault]);
 
   /* ── Canvas helpers ──────────────────────────────────── */
   const clearCanvas = () => {
