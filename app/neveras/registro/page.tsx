@@ -49,7 +49,7 @@ export default function NeverasRegistroPage() {
   const [firmas, setFirmas] = useState({ manana: "", tarde: "", noche: "" });
   const [info, setInfo] = useState({
     marca: "", modelo: "", serial: "", certificado: "",
-    factor_correccion: "0.54",
+    factor_correccion: "0",
     responsable_manana: "", responsable_tarde: "", responsable_noche: "",
     fecha_limpieza: "", observaciones: "",
   });
@@ -98,7 +98,7 @@ export default function NeverasRegistroPage() {
         modelo:              r.dispositivo_modelo  ?? "",
         serial:              r.dispositivo_serial  ?? "",
         certificado:         r.certificado         ?? "",
-        factor_correccion:   r.factor_correccion   ?? "0.54",
+        factor_correccion:   r.factor_correccion   ?? "0",
         responsable_manana:  r.responsable_manana,
         responsable_tarde:   r.responsable_tarde,
         responsable_noche:   r.responsable_noche,
@@ -111,6 +111,8 @@ export default function NeverasRegistroPage() {
       setFirmas({ manana: "", tarde: "", noche: "" });
       setInfo(prev => ({
         ...prev,
+        marca: "", modelo: "", serial: "", certificado: "",
+        factor_correccion: "0",
         responsable_manana: "", responsable_tarde: "", responsable_noche: "",
         fecha_limpieza: "", observaciones: "",
       }));

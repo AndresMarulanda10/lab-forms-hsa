@@ -47,7 +47,8 @@ export default function TermohigrometriaPage() {
     ubicacion: "", dispositivo_nombre: "TERMOHIGROMETRO",
     dispositivo_marca: "", dispositivo_modelo: "",
     dispositivo_serial: "", certificado: "",
-    factor_correccion: "0.54",
+    factor_correccion_temp: "0",
+    factor_correccion_hum: "0",
     responsable_manana: "", responsable_tarde: "", responsable_noche: "",
     observaciones: "",
   });
@@ -74,7 +75,8 @@ export default function TermohigrometriaPage() {
         ubicacion: r.ubicacion, dispositivo_nombre: r.dispositivo_nombre,
         dispositivo_marca: r.dispositivo_marca, dispositivo_modelo: r.dispositivo_modelo,
         dispositivo_serial: r.dispositivo_serial, certificado: r.certificado,
-        factor_correccion: r.factor_correccion,
+        factor_correccion_temp: r.factor_correccion_temp ?? r.factor_correccion ?? "0",
+        factor_correccion_hum:  r.factor_correccion_hum  ?? "0",
         responsable_manana: r.responsable_manana ?? "",
         responsable_tarde:  r.responsable_tarde  ?? "",
         responsable_noche:  r.responsable_noche  ?? "",
@@ -89,7 +91,8 @@ export default function TermohigrometriaPage() {
         ubicacion: "", dispositivo_nombre: "TERMOHIGROMETRO",
         dispositivo_marca: "", dispositivo_modelo: "",
         dispositivo_serial: "", certificado: "",
-        factor_correccion: "0.54",
+        factor_correccion_temp: "0",
+        factor_correccion_hum: "0",
         responsable_manana: "", responsable_tarde: "", responsable_noche: "",
         observaciones: "",
       });
@@ -247,7 +250,8 @@ export default function TermohigrometriaPage() {
     setMes(m); setAño(a);
   };
 
-  const fc = parseFloat(info.factor_correccion) || 0;
+  const fcTemp = parseFloat(info.factor_correccion_temp) || 0;
+  const fcHum  = parseFloat(info.factor_correccion_hum)  || 0;
 
   // ── Datos de prueba con 3 jornadas ────────────────────────────────────────
   const cargarDatosPrueba = () => {
@@ -282,7 +286,7 @@ export default function TermohigrometriaPage() {
 
       {/* ─── Metadatos ───────────────────────────────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs">
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 divide-x divide-y divide-gray-200">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 divide-x divide-y divide-gray-200">
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Mes</p>
             <div className="flex items-center gap-1">
@@ -316,10 +320,16 @@ export default function TermohigrometriaPage() {
               value={info.dispositivo_modelo} onChange={e => setInfo(i => ({...i, dispositivo_modelo: e.target.value}))} placeholder="—"/>
           </div>
           <div className="px-3 py-2">
-            <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">F. Corrección</p>
+            <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">F. Corr. Temp</p>
             <input type="number" step="0.01"
               className="w-full bg-transparent font-bold text-hsa-green focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
-              value={info.factor_correccion} onChange={e => setInfo(i => ({...i, factor_correccion: e.target.value}))} placeholder="0"/>
+              value={info.factor_correccion_temp} onChange={e => setInfo(i => ({...i, factor_correccion_temp: e.target.value}))} placeholder="0"/>
+          </div>
+          <div className="px-3 py-2">
+            <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">F. Corr. Hum</p>
+            <input type="number" step="0.01"
+              className="w-full bg-transparent font-bold text-sky-500 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
+              value={info.factor_correccion_hum} onChange={e => setInfo(i => ({...i, factor_correccion_hum: e.target.value}))} placeholder="0"/>
           </div>
         </div>
 
@@ -387,7 +397,7 @@ export default function TermohigrometriaPage() {
             <RegistroChart
               modo="temperatura" lecturas={lecturas} mes={mes} año={año}
               rangoMin={tempMin} rangoMax={tempMax}
-              factorCorreccion={fc}
+              factorCorreccion={fcTemp}
               titulo="Temperatura Ambiental" unidad="°C"/>
 
             {/* Ingreso de lectura */}
@@ -442,9 +452,9 @@ export default function TermohigrometriaPage() {
                     onKeyDown={e => e.key === "Enter" && agregar()}
                     placeholder="0.0"/>
                 </div>
-                {inputTemp && fc !== 0 && !isNaN(parseFloat(inputTemp)) && (
+                {inputTemp && fcTemp !== 0 && !isNaN(parseFloat(inputTemp)) && (
                   <span className="text-xs font-semibold" style={{ color: J_COLOR[jornadaAdd] }}>
-                    → {(parseFloat(inputTemp) + fc).toFixed(1)}°C corregida
+                    → {(parseFloat(inputTemp) + fcTemp).toFixed(1)}°C corregida
                   </span>
                 )}
                 <button onClick={agregar} disabled={!inputTemp}
@@ -461,6 +471,7 @@ export default function TermohigrometriaPage() {
             <RegistroChart
               modo="humedad" lecturas={lecturas} mes={mes} año={año}
               rangoMin={humMin} rangoMax={humMax}
+              factorCorreccion={fcHum}
               titulo="Humedad Relativa" unidad="%"/>
           </div>
 
