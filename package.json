@@ -1,12 +1,20 @@
 {
   "name": "lab-forms-hsa",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "HSA laboratory forms — temperature and humidity tracking",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AndresMarulanda10/lab-forms-hsa"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

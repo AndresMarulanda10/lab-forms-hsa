@@ -181,7 +181,7 @@ Ejemplos:
 
 - **Sin test runner configurado**: no hay `npm test`, Vitest, Jest, Playwright ni Cypress detectados. Strict TDD queda deshabilitado hasta instalar pruebas.
 - **RLS permisivo**: `Allow all anon` permite lectura/escritura amplia. Adecuado sólo si el despliegue está controlado por red/acceso externo.
-- **Docs desalineadas**: README dice `NEXT_PUBLIC_SUPABASE_ANON_KEY`, pero el server client espera `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`.
+- **Tipos de key Supabase**: la app usa `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`; `NEXT_PUBLIC_SUPABASE_ANON_KEY` queda documentada sólo como alias legacy/compatibilidad.
 - **Schema no está en carpeta Supabase estándar**: hay `lib/schema.sql` y `migrations/`, pero no `supabase/migrations`. Esto limita trazabilidad formal de migrations.
 - **Tipos de DB manuales**: `lib/types.ts` no usa tipos generados por Supabase. De hecho, `utils/supabase/server.ts` evita pasar el generic porque el tipo manual no satisface constraints internas.
 - **Páginas grandes**: formularios de termohigrometría y neveras concentran mucha lógica de UI, estado y persistencia; futuros cambios deberían extraer helpers/componentes por responsabilidad.
