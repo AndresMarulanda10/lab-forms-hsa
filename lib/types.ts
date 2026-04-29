@@ -212,7 +212,10 @@ export interface RegistroTermohigrometria {
   dispositivo_modelo: string;
   dispositivo_serial: string;
   certificado: string;
-  factor_correccion: string;
+  /** @deprecated Use factor_correccion_temp / factor_correccion_hum */
+  factor_correccion?: string;
+  factor_correccion_temp: string;
+  factor_correccion_hum: string;
   lecturas: LecturasTermohigrometria;
   // Tres jornadas (igual que F-029)
   responsable_manana: string;

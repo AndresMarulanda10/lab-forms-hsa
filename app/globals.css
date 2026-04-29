@@ -71,11 +71,13 @@
 }
 
 @media print {
+  @page { size: A4 landscape; margin: 5mm; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .no-print  { display: none !important; }
   .print-only { display: block !important; }
   body { background: white !important; color: #1a1a1a !important; }
   .card { border: none !important; box-shadow: none !important; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
 }
 
 .print-only { display: none; }

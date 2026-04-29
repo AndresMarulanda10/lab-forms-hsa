@@ -10,6 +10,7 @@ import HospitalHeader from "@/components/HospitalHeader";
 import HospitalFooter from "@/components/HospitalFooter";
 import NeveraChart from "@/components/NeveraChart";
 import FirmaGuardadoModal from "@/components/FirmaGuardadoModal";
+import NeveraPrintTemplate from "@/components/NeveraPrintTemplate";
 import type {
   Nevera, RegistroNevera, LecturasNevera,
   JornadaKey, Jornada, LecturaAuditada, LecturaHistorial,
@@ -49,7 +50,7 @@ export default function NeverasRegistroPage() {
   const [firmas, setFirmas] = useState({ manana: "", tarde: "", noche: "" });
   const [info, setInfo] = useState({
     marca: "", modelo: "", serial: "", certificado: "",
-    factor_correccion: "0.54",
+    factor_correccion: "0",
     responsable_manana: "", responsable_tarde: "", responsable_noche: "",
     fecha_limpieza: "", observaciones: "",
   });
@@ -98,7 +99,7 @@ export default function NeverasRegistroPage() {
         modelo:              r.dispositivo_modelo  ?? "",
         serial:              r.dispositivo_serial  ?? "",
         certificado:         r.certificado         ?? "",
-        factor_correccion:   r.factor_correccion   ?? "0.54",
+        factor_correccion:   r.factor_correccion   ?? "0",
         responsable_manana:  r.responsable_manana,
         responsable_tarde:   r.responsable_tarde,
         responsable_noche:   r.responsable_noche,
@@ -111,6 +112,8 @@ export default function NeverasRegistroPage() {
       setFirmas({ manana: "", tarde: "", noche: "" });
       setInfo(prev => ({
         ...prev,
+        marca: "", modelo: "", serial: "", certificado: "",
+        factor_correccion: "0",
         responsable_manana: "", responsable_tarde: "", responsable_noche: "",
         fecha_limpieza: "", observaciones: "",
       }));
@@ -300,7 +303,7 @@ export default function NeverasRegistroPage() {
     <div className="space-y-6">
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${toast.type === "ok" ? "bg-green-600" : "bg-red-600"} text-white`}>
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium no-print ${toast.type === "ok" ? "bg-green-600" : "bg-red-600"} text-white`}>
           {toast.type === "ok" ? <CheckCircle size={16}/> : <AlertCircle size={16}/>}
           {toast.msg}
         </div>
@@ -311,7 +314,7 @@ export default function NeverasRegistroPage() {
         nombreDocumento="FORMATO PARA REGISTRO DE TEMPERATURA DE LA CADENA DE FRÍO" />
 
       {/* ─── Metadatos ───────────────────────────────────────────────────── */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs no-print">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 divide-x divide-y divide-gray-200">
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Mes</p>
@@ -399,11 +402,11 @@ export default function NeverasRegistroPage() {
 
       {/* ═══ GRÁFICA ═════════════════════════════════════════════════════════ */}
       {loading ? (
-        <div className="flex items-center justify-center h-64 text-gray-400">
+        <div className="flex items-center justify-center h-64 text-gray-400 no-print">
           <Loader2 size={28} className="animate-spin mr-2"/> Cargando…
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden no-print">
           {/* Leyenda */}
           <div className="flex items-center gap-4 px-4 pt-3 pb-1 text-xs text-gray-500 flex-wrap">
             {JORNADAS.map(j => (
@@ -487,7 +490,7 @@ export default function NeverasRegistroPage() {
       )}
 
       {/* ═══ RESPONSABLES ════════════════════════════════════════════════════ */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs no-print">
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-x divide-gray-200">
           {JORNADAS.map(j => {
             const campo = j === "M" ? "responsable_manana" : j === "T" ? "responsable_tarde" : "responsable_noche";
@@ -525,38 +528,52 @@ export default function NeverasRegistroPage() {
         </div>
       </div>
 
+      <NeveraPrintTemplate
+        className="print-only"
+        lecturas={lecturas}
+        mes={mes}
+        año={año}
+        neveraNombre={selectedNevera?.nombre ?? ""}
+        info={info}
+        firmas={firmas}
+        rangoMin={rangoMin}
+        rangoMax={rangoMax}
+      />
+
       <HospitalFooter />
 
       {/* ── Modal de firma POR LECTURA ───────────────────────────────────── */}
-      <FirmaGuardadoModal
-        open={firmaModalAdd}
-        onClose={() => { setFirmaModalAdd(false); setPendingAdd(null); }}
-        onConfirm={handleAddWithFirma}
-        jornadaDefault={toJornadaKey(jornadaAdd)}
-        responsables={{
-          manana: info.responsable_manana,
-          tarde:  info.responsable_tarde,
-          noche:  info.responsable_noche,
-        }}
-        titulo={
-          pendingAdd
-            ? `Firmar lectura — Día ${pendingAdd.dia} · ${J_LABEL[jornadaAdd]} · ${pendingAdd.temp}°C`
-            : "Firmar lectura"
-        }
-      />
+      <div className="no-print">
+        <FirmaGuardadoModal
+          open={firmaModalAdd}
+          onClose={() => { setFirmaModalAdd(false); setPendingAdd(null); }}
+          onConfirm={handleAddWithFirma}
+          jornadaDefault={toJornadaKey(jornadaAdd)}
+          responsables={{
+            manana: info.responsable_manana,
+            tarde:  info.responsable_tarde,
+            noche:  info.responsable_noche,
+          }}
+          titulo={
+            pendingAdd
+              ? `Firmar lectura — Día ${pendingAdd.dia} · ${J_LABEL[jornadaAdd]} · ${pendingAdd.temp}°C`
+              : "Firmar lectura"
+          }
+        />
 
-      {/* ── Modal de firma MENSUAL (responsables + dispositivo) ──────────── */}
-      <FirmaGuardadoModal
-        open={firmaModal}
-        onClose={() => setFirmaModal(false)}
-        onConfirm={handleSaveMensual}
-        responsables={{
-          manana: info.responsable_manana,
-          tarde:  info.responsable_tarde,
-          noche:  info.responsable_noche,
-        }}
-        titulo="Guardar registro mensual — F-029"
-      />
+        {/* ── Modal de firma MENSUAL (responsables + dispositivo) ──────────── */}
+        <FirmaGuardadoModal
+          open={firmaModal}
+          onClose={() => setFirmaModal(false)}
+          onConfirm={handleSaveMensual}
+          responsables={{
+            manana: info.responsable_manana,
+            tarde:  info.responsable_tarde,
+            noche:  info.responsable_noche,
+          }}
+          titulo="Guardar registro mensual — F-029"
+        />
+      </div>
     </div>
   );
 }
