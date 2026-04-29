@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -72,10 +73,15 @@ export default function PrintChart({
   width = 720,
   height = 260,
 }: PrintChartProps) {
+  const [isClient, setIsClient] = useState(false);
   const hasCorrection = factorCorreccion !== 0;
   const yTicks = buildYTicks(rangoMin, rangoMax, unidad);
   const yMin = yTicks[0] ?? rangoMin;
   const yMax = yTicks[yTicks.length - 1] ?? rangoMax;
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   return (
     <section className="break-inside-avoid space-y-0.5">
@@ -97,77 +103,81 @@ export default function PrintChart({
         )}
       </div>
 
-      <LineChart width={width} height={height} data={data} margin={{ top: 4, right: 28, left: 0, bottom: 16 }}>
-        <CartesianGrid strokeDasharray="2 2" stroke="#e5e7eb" />
-        <ReferenceArea y1={rangoMin} y2={rangoMax} fill="#dbeafe" fillOpacity={0.35} stroke="none" />
-        <ReferenceLine
-          y={rangoMin}
-          stroke="#3b82f6"
-          strokeDasharray="4 2"
-          strokeWidth={1}
-          label={{ value: `${rangoMin}${unidad}`, position: "insideBottomRight", fontSize: 9, fill: "#3b82f6" }}
-        />
-        <ReferenceLine
-          y={rangoMax}
-          stroke="#3b82f6"
-          strokeDasharray="4 2"
-          strokeWidth={1}
-          label={{ value: `${rangoMax}${unidad}`, position: "insideTopRight", fontSize: 9, fill: "#3b82f6" }}
-        />
-        <XAxis
-          dataKey="dia"
-          tick={{ fontSize: 8, fill: "#6b7280" }}
-          tickLine={false}
-          axisLine={{ stroke: "#d1d5db" }}
-          label={{ value: "Días", position: "insideBottom", offset: -6, fontSize: 8, fill: "#6b7280" }}
-        />
-        <YAxis
-          domain={[yMin, yMax]}
-          ticks={yTicks}
-          tick={{ fontSize: 8, fill: "#6b7280" }}
-          tickLine={false}
-          axisLine={false}
-          tickFormatter={(value) => `${Number(value).toFixed(1)}${unidad}`}
-          width={44}
-        />
-
-        {JORNADAS.map((jornada) => (
-          <Line
-            key={jornada}
-            type="linear"
-            dataKey={jornada}
-            name={J_LABEL[jornada]}
-            stroke={J_COLOR[jornada]}
-            strokeWidth={2}
-            connectNulls={false}
-            dot={{ r: 2 }}
-            activeDot={false}
-            isAnimationActive={false}
+      {isClient ? (
+        <LineChart width={width} height={height} data={data} margin={{ top: 4, right: 28, left: 0, bottom: 16 }}>
+          <CartesianGrid strokeDasharray="2 2" stroke="#e5e7eb" />
+          <ReferenceArea y1={rangoMin} y2={rangoMax} fill="#dbeafe" fillOpacity={0.35} stroke="none" />
+          <ReferenceLine
+            y={rangoMin}
+            stroke="#3b82f6"
+            strokeDasharray="4 2"
+            strokeWidth={1}
+            label={{ value: `${rangoMin}${unidad}`, position: "insideBottomRight", fontSize: 9, fill: "#3b82f6" }}
           />
-        ))}
+          <ReferenceLine
+            y={rangoMax}
+            stroke="#3b82f6"
+            strokeDasharray="4 2"
+            strokeWidth={1}
+            label={{ value: `${rangoMax}${unidad}`, position: "insideTopRight", fontSize: 9, fill: "#3b82f6" }}
+          />
+          <XAxis
+            dataKey="dia"
+            tick={{ fontSize: 8, fill: "#6b7280" }}
+            tickLine={false}
+            axisLine={{ stroke: "#d1d5db" }}
+            label={{ value: "Días", position: "insideBottom", offset: -6, fontSize: 8, fill: "#6b7280" }}
+          />
+          <YAxis
+            domain={[yMin, yMax]}
+            ticks={yTicks}
+            tick={{ fontSize: 8, fill: "#6b7280" }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={(value) => `${Number(value).toFixed(1)}${unidad}`}
+            width={44}
+          />
 
-        {hasCorrection && JORNADAS.map((jornada) => {
-          const correctionKey: CorrectionChartKey = `${jornada}_corr`;
-
-          return (
+          {JORNADAS.map((jornada) => (
             <Line
-              key={correctionKey}
+              key={jornada}
               type="linear"
-              dataKey={correctionKey}
-              name={`${J_LABEL[jornada]} corregido`}
+              dataKey={jornada}
+              name={J_LABEL[jornada]}
               stroke={J_COLOR[jornada]}
-              strokeWidth={1.5}
-              strokeDasharray="5 3"
-              strokeOpacity={0.55}
+              strokeWidth={2}
               connectNulls={false}
-              dot={false}
+              dot={{ r: 2 }}
               activeDot={false}
-              legendType="none"
               isAnimationActive={false}
             />
-          );
-        })}
-      </LineChart>
+          ))}
+
+          {hasCorrection && JORNADAS.map((jornada) => {
+            const correctionKey: CorrectionChartKey = `${jornada}_corr`;
+
+            return (
+              <Line
+                key={correctionKey}
+                type="linear"
+                dataKey={correctionKey}
+                name={`${J_LABEL[jornada]} corregido`}
+                stroke={J_COLOR[jornada]}
+                strokeWidth={1.5}
+                strokeDasharray="5 3"
+                strokeOpacity={0.55}
+                connectNulls={false}
+                dot={false}
+                activeDot={false}
+                legendType="none"
+                isAnimationActive={false}
+              />
+            );
+          })}
+        </LineChart>
+      ) : (
+        <div aria-hidden="true" className="w-full" style={{ width, height }} />
+      )}
     </section>
   );
 }
