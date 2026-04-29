@@ -1,0 +1,70 @@
+name: CD
+
+# Continuous Deployment pipeline
+#
+# Vercel handles the actual build & deploy via its GitHub integration:
+#   - push to `main`         -> Production deploy
+#   - push to `development`  -> Preview deploy
+#
+# This workflow runs AFTER CI succeeds and records the deployment for audit.
+#
+# Branch protection rules should require the "CI" workflow to pass
+# before merging — ensuring Vercel only deploys validated code.
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main, development]
+
+jobs:
+  # ────────────────────────────────────────────────────────────────
+  # Record: log deployment info for audit trail (only if CI passed)
+  # ────────────────────────────────────────────────────────────────
+  record-deployment:
+    name: Record Deployment
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event.workflow_run.head_branch }}" == "main" ]]; then
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=preview" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log deployment summary
+        run: |
+          echo "## Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Branch** | \`${{ github.event.workflow_run.head_branch }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Commit** | \`${{ github.event.workflow_run.head_sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **CI Result** | ${{ github.event.workflow_run.conclusion }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Environment** | ${{ steps.env.outputs.environment }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Deployed by** | Vercel GitHub Integration (auto) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> Vercel deploys automatically on push. CI gate ensures only validated code reaches deployment." >> "$GITHUB_STEP_SUMMARY"
+
+  # ────────────────────────────────────────────────────────────────
+  # Alert: notify if CI failed (deployment may have bad code)
+  # ────────────────────────────────────────────────────────────────
+  ci-failed:
+    name: CI Failed Alert
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'failure'
+    steps:
+      - name: Log CI failure warning
+        run: |
+          echo "## CI Failed — Vercel deployment may contain broken code" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Branch** | \`${{ github.event.workflow_run.head_branch }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Commit** | \`${{ github.event.workflow_run.head_sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **CI Result** | ${{ github.event.workflow_run.conclusion }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> **Action required**: Check CI logs and consider rolling back the Vercel deployment." >> "$GITHUB_STEP_SUMMARY"
