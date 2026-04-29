@@ -9,6 +9,7 @@ import HospitalHeader from "@/components/HospitalHeader";
 import HospitalFooter from "@/components/HospitalFooter";
 import RegistroChart from "@/components/RegistroChart";
 import FirmaGuardadoModal from "@/components/FirmaGuardadoModal";
+import TermoPrintTemplate from "@/components/TermoPrintTemplate";
 import type {
   LecturasTermohigrometria, LecturaDiaTermohigro,
   RegistroTermohigrometria, JornadaKey,
@@ -272,7 +273,7 @@ export default function TermohigrometriaPage() {
     <div className="space-y-6">
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium ${toast.type === "ok" ? "bg-green-600" : "bg-red-600"} text-white`}>
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium no-print ${toast.type === "ok" ? "bg-green-600" : "bg-red-600"} text-white`}>
           {toast.type === "ok" ? <CheckCircle size={16}/> : <AlertCircle size={16}/>}
           {toast.msg}
         </div>
@@ -285,7 +286,7 @@ export default function TermohigrometriaPage() {
       />
 
       {/* ─── Metadatos ───────────────────────────────────────────────────── */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs no-print">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 divide-x divide-y divide-gray-200">
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Mes</p>
@@ -387,11 +388,11 @@ export default function TermohigrometriaPage() {
 
       {/* ═══ GRÁFICAS ════════════════════════════════════════════════════════ */}
       {loading ? (
-        <div className="flex items-center justify-center h-48 text-gray-400">
+        <div className="flex items-center justify-center h-48 text-gray-400 no-print">
           <Loader2 size={28} className="animate-spin mr-2"/> Cargando…
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6 no-print">
           {/* ── Temperatura ─────────────────────────────────────────────── */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <RegistroChart
@@ -510,34 +511,49 @@ export default function TermohigrometriaPage() {
         </div>
       )}
 
+      <TermoPrintTemplate
+        className="print-only"
+        lecturas={lecturas}
+        mes={mes}
+        año={año}
+        info={info}
+        firmas={firmas}
+        tempMin={tempMin}
+        tempMax={tempMax}
+        humMin={humMin}
+        humMax={humMax}
+      />
+
       <HospitalFooter/>
 
       {/* ── Modal de firma por entrada ────────────────────────────────────── */}
-      <FirmaGuardadoModal
-        open={firmaModalAdd}
-        onClose={() => { setFirmaModalAdd(false); setPendingAdd(null); }}
-        onConfirm={handleAddWithFirma}
-        responsable={responsableDeJornada(jornadaAdd)}
-        jornadaDefault={toJornadaKey(jornadaAdd)}
-        titulo={
-          pendingAdd
-            ? `Firmar lectura — Día ${pendingAdd.dia} · ${J_LABEL[jornadaAdd]} · ${pendingAdd.temp}°C${pendingAdd.hum != null ? ` · ${pendingAdd.hum}%` : ""}`
-            : "Firmar lectura"
-        }
-      />
+      <div className="no-print">
+        <FirmaGuardadoModal
+          open={firmaModalAdd}
+          onClose={() => { setFirmaModalAdd(false); setPendingAdd(null); }}
+          onConfirm={handleAddWithFirma}
+          responsable={responsableDeJornada(jornadaAdd)}
+          jornadaDefault={toJornadaKey(jornadaAdd)}
+          titulo={
+            pendingAdd
+              ? `Firmar lectura — Día ${pendingAdd.dia} · ${J_LABEL[jornadaAdd]} · ${pendingAdd.temp}°C${pendingAdd.hum != null ? ` · ${pendingAdd.hum}%` : ""}`
+              : "Firmar lectura"
+          }
+        />
 
-      {/* ── Modal de firma mensual ────────────────────────────────────────── */}
-      <FirmaGuardadoModal
-        open={firmaModal}
-        onClose={() => setFirmaModal(false)}
-        onConfirm={handleSaveMensual}
-        responsables={{
-          manana: info.responsable_manana,
-          tarde:  info.responsable_tarde,
-          noche:  info.responsable_noche,
-        }}
-        titulo="Guardar mes — F-021 Termohigrometría"
-      />
+        {/* ── Modal de firma mensual ────────────────────────────────────────── */}
+        <FirmaGuardadoModal
+          open={firmaModal}
+          onClose={() => setFirmaModal(false)}
+          onConfirm={handleSaveMensual}
+          responsables={{
+            manana: info.responsable_manana,
+            tarde:  info.responsable_tarde,
+            noche:  info.responsable_noche,
+          }}
+          titulo="Guardar mes — F-021 Termohigrometría"
+        />
+      </div>
     </div>
   );
 }
