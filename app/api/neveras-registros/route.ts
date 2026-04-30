@@ -1,5 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import type { RegistroNeveraInsert } from "@/lib/types";
+
+type LegacyRegistroNeveraBody = RegistroNeveraInsert & {
+  dispositivo?: string;
+  dispositivo_marca?: string;
+  dispositivo_modelo?: string;
+  dispositivo_serial?: string;
+  certificado?: string;
+  factor_correccion?: string;
+};
+
+function stripLegacyDeviceFields(body: LegacyRegistroNeveraBody): RegistroNeveraInsert {
+  const {
+    dispositivo: _dispositivo,
+    dispositivo_marca: _dispositivoMarca,
+    dispositivo_modelo: _dispositivoModelo,
+    dispositivo_serial: _dispositivoSerial,
+    certificado: _certificado,
+    factor_correccion: _factorCorreccion,
+    ...registro
+  } = body;
+
+  return registro;
+}
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -25,7 +49,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
-  const body = await req.json();
+  const body = stripLegacyDeviceFields(await req.json());
 
   const { data, error } = await supabase
     .from("registros_neveras")

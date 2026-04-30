@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft, ChevronRight, Printer, Loader2,
   CheckCircle, AlertCircle, Refrigerator, Plus, PenLine, Save,
@@ -14,16 +14,81 @@ import NeveraPrintTemplate from "@/components/NeveraPrintTemplate";
 import type {
   Nevera, RegistroNevera, LecturasNevera,
   JornadaKey, Jornada, LecturaAuditada, LecturaHistorial,
+  RegistroNeveraCachedState, RegistroNeveraFormInfo,
 } from "@/lib/types";
 import {
   MESES, getDiasEnMes, lecturaClave,
   valorDeLectura, esLecturaAuditada,
 } from "@/lib/types";
 
+type NeveraDeviceField =
+  | "dispositivo"
+  | "dispositivo_marca"
+  | "dispositivo_modelo"
+  | "dispositivo_serial"
+  | "certificado"
+  | "factor_correccion";
+
+type NeveraDeviceDraft = Pick<Nevera, NeveraDeviceField>;
+
 // ─── Colores y etiquetas por jornada ─────────────────────────────────────────
 const J_COLOR: Record<Jornada, string> = { M: "#006b3c", T: "#d97706", N: "#4338ca" };
 const J_LABEL: Record<Jornada, string> = { M: "Mañana", T: "Tarde", N: "Noche" };
 const JORNADAS: Jornada[] = ["M", "T", "N"];
+
+const EMPTY_FIRMAS: Record<JornadaKey, string> = { manana: "", tarde: "", noche: "" };
+
+const EMPTY_INFO: RegistroNeveraFormInfo = {
+  responsable_manana: "",
+  responsable_tarde: "",
+  responsable_noche: "",
+  fecha_limpieza: "",
+  observaciones: "",
+};
+
+const EMPTY_DEVICE_DRAFT: NeveraDeviceDraft = {
+  dispositivo: "",
+  dispositivo_marca: "",
+  dispositivo_modelo: "",
+  dispositivo_serial: "",
+  certificado: "",
+  factor_correccion: "0",
+};
+
+const DEVICE_INPUT_CLASS = "w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors";
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+const getApiErrorMessage = async (res: Response, fallback: string) => {
+  try {
+    const body: unknown = await res.json();
+    if (
+      body &&
+      typeof body === "object" &&
+      "error" in body &&
+      typeof body.error === "string" &&
+      body.error.trim()
+    ) {
+      return body.error;
+    }
+  } catch {
+    // Ignore malformed/non-JSON error bodies and use the provided fallback.
+  }
+
+  return fallback;
+};
+
+const getDeviceDraft = (nevera: Nevera | null): NeveraDeviceDraft => ({
+  dispositivo: nevera?.dispositivo ?? "",
+  dispositivo_marca: nevera?.dispositivo_marca ?? "",
+  dispositivo_modelo: nevera?.dispositivo_modelo ?? "",
+  dispositivo_serial: nevera?.dispositivo_serial ?? "",
+  certificado: nevera?.certificado ?? "",
+  factor_correccion: nevera?.factor_correccion ?? "0",
+});
 
 /** Jornada (M/T/N) → JornadaKey (manana/tarde/noche) */
 const toJornadaKey = (j: Jornada): JornadaKey =>
@@ -39,30 +104,30 @@ export default function NeverasRegistroPage() {
   const [mes, setMes]   = useState(now.getMonth() + 1);
   const [neveras,        setNeveras]        = useState<Nevera[]>([]);
   const [selectedNevera, setSelectedNevera] = useState<Nevera | null>(null);
-  const [loading,        setLoading]        = useState(true);
+  const [loadingNeveras, setLoadingNeveras] = useState(true);
+  const [loadingRegistro, setLoadingRegistro] = useState(false);
   const [saving,         setSaving]         = useState(false);
   const [toast,          setToast]          = useState<{ msg: string; type: "ok" | "err" } | null>(null);
+  const [loadError,      setLoadError]      = useState<string | null>(null);
   const [rangoMin, setRangoMin] = useState(2);
   const [rangoMax, setRangoMax] = useState(8);
 
   const [lecturas, setLecturas] = useState<LecturasNevera>({});
   const lecturasOriginales = useRef<LecturasNevera>({});
-  const [firmas, setFirmas] = useState({ manana: "", tarde: "", noche: "" });
-  const [info, setInfo] = useState({
-    marca: "", modelo: "", serial: "", certificado: "",
-    factor_correccion: "0",
-    responsable_manana: "", responsable_tarde: "", responsable_noche: "",
-    fecha_limpieza: "", observaciones: "",
-  });
+  const cachedStates = useRef<Record<string, RegistroNeveraCachedState>>({});
+  const selectedNeveraIdRef = useRef<string | null>(null);
+  const [firmas, setFirmas] = useState<Record<JornadaKey, string>>({ ...EMPTY_FIRMAS });
+  const [info, setInfo] = useState<RegistroNeveraFormInfo>({ ...EMPTY_INFO });
+  const [deviceDraft, setDeviceDraft] = useState<NeveraDeviceDraft>({ ...EMPTY_DEVICE_DRAFT });
 
   // ── Ingreso por lectura ────────────────────────────────────────────────────
   const [jornadaAdd,    setJornadaAdd]    = useState<Jornada>("M");
   const [inputDia,      setInputDia]      = useState(String(now.getDate()));
   const [inputTemp,     setInputTemp]     = useState("");
-  // Modal para firma por lectura individual
+  // Modal para confirmación por lectura individual
   const [pendingAdd,    setPendingAdd]    = useState<{ dia: number; temp: number } | null>(null);
   const [firmaModalAdd, setFirmaModalAdd] = useState(false);
-  // Modal para firma mensual (responsables + dispositivo + observaciones)
+  // Modal para confirmación mensual (responsables + observaciones)
   const [firmaModal,    setFirmaModal]    = useState(false);
 
   const showToast = (msg: string, type: "ok" | "err" = "ok") => {
@@ -70,74 +135,219 @@ export default function NeverasRegistroPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // ── Carga ──────────────────────────────────────────────────────────────────
-  const loadNeveras = async () => {
-    try {
-      const res  = await fetch("/api/neveras");
-      const data = await res.json();
-      const arr: Nevera[] = Array.isArray(data) ? data : [];
-      const activas = arr.filter(n => n.activa);
-      setNeveras(activas);
-      if (activas.length > 0) setSelectedNevera(activas[0]);
-    } catch { setNeveras([]); }
-  };
+  const loading = loadingNeveras || loadingRegistro;
 
-  const loadRegistro = useCallback(async () => {
-    if (!selectedNevera) return;
-    setLoading(true);
-    const res  = await fetch(`/api/neveras-registros?nevera_id=${selectedNevera.id}&año=${año}&mes=${mes}`);
-    const data: RegistroNevera[] = await res.json();
-    if (data.length > 0) {
-      const r = data[0];
-      const lecs = (r.lecturas || {}) as LecturasNevera;
-      setLecturas(lecs);
-      lecturasOriginales.current = lecs;
-      setFirmas({ manana: r.firma_manana ?? "", tarde: r.firma_tarde ?? "", noche: r.firma_noche ?? "" });
-      setInfo(prev => ({
-        ...prev,
-        marca:               r.dispositivo_marca   ?? "",
-        modelo:              r.dispositivo_modelo  ?? "",
-        serial:              r.dispositivo_serial  ?? "",
-        certificado:         r.certificado         ?? "",
-        factor_correccion:   r.factor_correccion   ?? "0",
-        responsable_manana:  r.responsable_manana,
-        responsable_tarde:   r.responsable_tarde,
-        responsable_noche:   r.responsable_noche,
-        fecha_limpieza:      r.fecha_limpieza ?? "",
-        observaciones:       r.observaciones,
-      }));
-    } else {
+  // ── Carga ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const loadNeveras = async () => {
+      setLoadingNeveras(true);
+      setLoadError(null);
+      try {
+        const res  = await fetch("/api/neveras");
+        if (!res.ok) throw new Error(await getApiErrorMessage(res, "No se pudieron cargar las neveras."));
+        const data = await res.json();
+        const arr: Nevera[] = Array.isArray(data) ? data : [];
+        const activas = arr.filter(n => n.activa);
+        setNeveras(activas);
+        if (activas.length > 0) {
+          setSelectedNevera(current => {
+            const next = current ? activas.find(n => n.id === current.id) ?? activas[0] : activas[0];
+            setDeviceDraft(getDeviceDraft(next));
+            return next;
+          });
+        } else {
+          setSelectedNevera(null);
+          setDeviceDraft({ ...EMPTY_DEVICE_DRAFT });
+          setLoadingRegistro(false);
+        }
+      } catch (err: unknown) {
+        const message = getErrorMessage(err, "No se pudieron cargar las neveras.");
+        setNeveras([]);
+        setSelectedNevera(null);
+        setDeviceDraft({ ...EMPTY_DEVICE_DRAFT });
+        setLoadingRegistro(false);
+        setLoadError(message);
+        setToast({ msg: message, type: "err" });
+        setTimeout(() => setToast(null), 3500);
+      } finally {
+        setLoadingNeveras(false);
+      }
+    };
+
+    loadNeveras();
+  }, []);
+
+  useEffect(() => {
+    selectedNeveraIdRef.current = selectedNevera?.id ?? null;
+  }, [selectedNevera?.id]);
+
+  useEffect(() => {
+    if (!selectedNevera) {
       setLecturas({});
       lecturasOriginales.current = {};
-      setFirmas({ manana: "", tarde: "", noche: "" });
-      setInfo(prev => ({
-        ...prev,
-        marca: "", modelo: "", serial: "", certificado: "",
-        factor_correccion: "0",
-        responsable_manana: "", responsable_tarde: "", responsable_noche: "",
-        fecha_limpieza: "", observaciones: "",
-      }));
+      setFirmas({ ...EMPTY_FIRMAS });
+      setInfo({ ...EMPTY_INFO });
+      setDeviceDraft({ ...EMPTY_DEVICE_DRAFT });
+      setLoadingRegistro(false);
+      return;
     }
-    setLoading(false);
-  }, [selectedNevera, año, mes]);
 
-  useEffect(() => { loadNeveras(); }, []);
-  useEffect(() => { loadRegistro(); }, [loadRegistro]);
+    const cached = cachedStates.current[selectedNevera.id];
+    if (cached && cached.año === año && cached.mes === mes) {
+      setLecturas(cached.lecturas);
+      lecturasOriginales.current = cached.lecturasOriginales;
+      setFirmas(cached.firmas);
+      setInfo(cached.info);
+      setDeviceDraft(getDeviceDraft(selectedNevera));
+      setLoadError(null);
+      setLoadingRegistro(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadRegistro = async () => {
+      setLoadingRegistro(true);
+      setLoadError(null);
+      try {
+        const res  = await fetch(`/api/neveras-registros?nevera_id=${selectedNevera.id}&año=${año}&mes=${mes}`);
+        if (!res.ok) throw new Error(await getApiErrorMessage(res, "No se pudo cargar el registro de la nevera."));
+        const data: unknown = await res.json();
+        const registros: RegistroNevera[] = Array.isArray(data) ? data : [];
+        if (cancelled) return;
+
+        if (registros.length > 0) {
+          const r = registros[0];
+          const lecs = (r.lecturas || {}) as LecturasNevera;
+          const nextInfo: RegistroNeveraFormInfo = {
+            responsable_manana: r.responsable_manana,
+            responsable_tarde: r.responsable_tarde,
+            responsable_noche: r.responsable_noche,
+            fecha_limpieza: r.fecha_limpieza ?? "",
+            observaciones: r.observaciones,
+          };
+          setLecturas(lecs);
+          lecturasOriginales.current = lecs;
+          setFirmas({ manana: r.firma_manana ?? "", tarde: r.firma_tarde ?? "", noche: r.firma_noche ?? "" });
+          setInfo(nextInfo);
+        } else {
+          setLecturas({});
+          lecturasOriginales.current = {};
+          setFirmas({ ...EMPTY_FIRMAS });
+          setInfo({ ...EMPTY_INFO });
+        }
+      } catch (err: unknown) {
+        if (cancelled) return;
+        const message = getErrorMessage(err, "No se pudo cargar el registro de la nevera.");
+        setLecturas({});
+        lecturasOriginales.current = {};
+        setFirmas({ ...EMPTY_FIRMAS });
+        setInfo({ ...EMPTY_INFO });
+        setLoadError(message);
+        showToast(message, "err");
+      } finally {
+        if (!cancelled) setLoadingRegistro(false);
+      }
+    };
+
+    loadRegistro();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedNevera, año, mes]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const responsableDeJornada = (j: Jornada) =>
     j === "M" ? info.responsable_manana :
     j === "T" ? info.responsable_tarde  : info.responsable_noche;
 
+  const cacheCurrentNeveraState = () => {
+    if (!selectedNevera) return;
+    cachedStates.current[selectedNevera.id] = {
+      año,
+      mes,
+      lecturas,
+      lecturasOriginales: lecturasOriginales.current,
+      firmas,
+      info,
+    };
+  };
+
+  const handleNeveraChange = async (neveraId: string) => {
+    try {
+      await saveDeviceDraft();
+    } catch (err: unknown) {
+      showToast((err as Error).message || "Error al guardar dispositivo", "err");
+    }
+    cacheCurrentNeveraState();
+    const nextNevera = neveras.find(n => n.id === neveraId) ?? null;
+    selectedNeveraIdRef.current = nextNevera?.id ?? null;
+    setSelectedNevera(nextNevera);
+    setDeviceDraft(getDeviceDraft(nextNevera));
+
+    if (!nextNevera) return;
+    const cached = cachedStates.current[nextNevera.id];
+    if (cached) {
+      setAño(cached.año);
+      setMes(cached.mes);
+      setLecturas(cached.lecturas);
+      lecturasOriginales.current = cached.lecturasOriginales;
+      setFirmas(cached.firmas);
+      setInfo(cached.info);
+      setLoadingRegistro(false);
+    }
+  };
+
+  const updateDeviceDraft = (field: NeveraDeviceField, value: string) => {
+    setDeviceDraft(current => ({ ...current, [field]: value }));
+  };
+
+  const saveDeviceDraft = async () => {
+    if (!selectedNevera) return;
+
+    const hasChanges = (Object.keys(deviceDraft) as NeveraDeviceField[]).some(
+      field => (selectedNevera[field] ?? "") !== deviceDraft[field],
+    );
+    if (!hasChanges) return;
+
+    const previousId = selectedNevera.id;
+
+    const res = await fetch(`/api/neveras/${previousId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(deviceDraft),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    const updated: Nevera = await res.json();
+
+    if (selectedNeveraIdRef.current === previousId) {
+      setSelectedNevera(updated);
+      setDeviceDraft(getDeviceDraft(updated));
+    }
+    cachedStates.current[previousId] = {
+      año,
+      mes,
+      lecturas,
+      lecturasOriginales: lecturasOriginales.current,
+      firmas,
+      info,
+    };
+    setNeveras(current => current.map(n => (n.id === updated.id ? updated : n)));
+  };
+
+  const persistDeviceDraft = async () => {
+    try {
+      await saveDeviceDraft();
+    } catch (err: unknown) {
+      showToast((err as Error).message || "Error al guardar dispositivo", "err");
+    }
+  };
+
   /** Construye el objeto de save para la API */
   const buildSaveBody = (lecs: LecturasNevera, fs: typeof firmas) => ({
     nevera_id: selectedNevera!.id, año, mes,
     lecturas: lecs,
-    dispositivo_marca:  info.marca,
-    dispositivo_modelo: info.modelo,
-    dispositivo_serial: info.serial,
-    certificado:        info.certificado,
-    factor_correccion:  info.factor_correccion,
     responsable_manana: info.responsable_manana,
     responsable_tarde:  info.responsable_tarde,
     responsable_noche:  info.responsable_noche,
@@ -148,7 +358,7 @@ export default function NeverasRegistroPage() {
     firma_noche:        fs.noche,
   });
 
-  // ── Agregar lectura: valida y abre modal de firma ─────────────────────────
+  // ── Agregar lectura: valida y abre modal de confirmación ──────────────────
   const agregar = () => {
     // 1. Validar responsable de la jornada seleccionada
     if (!responsableDeJornada(jornadaAdd).trim()) {
@@ -165,12 +375,12 @@ export default function NeverasRegistroPage() {
     if (isNaN(dia) || dia < 1 || dia > max) { showToast(`Día inválido (1–${max})`, "err"); return; }
     if (isNaN(temp)) { showToast("Ingresa una temperatura", "err"); return; }
 
-    // 3. Guardar pendiente y abrir modal de firma
+    // 3. Guardar pendiente y abrir modal de confirmación
     setPendingAdd({ dia, temp });
     setFirmaModalAdd(true);
   };
 
-  // ── Confirmar firma por lectura individual: crea LecturaAuditada + guarda ─
+  // ── Confirmar lectura individual: crea LecturaAuditada + guarda ───────────
   const handleAddWithFirma = async ({ firma, jornada }: { firma: string; jornada?: JornadaKey }) => {
     if (!pendingAdd || !selectedNevera) return;
 
@@ -216,6 +426,16 @@ export default function NeverasRegistroPage() {
     const nuevasLecturas: LecturasNevera = { ...lecturas, [clave]: nuevaLectura };
     setLecturas(nuevasLecturas);
     lecturasOriginales.current = nuevasLecturas; // actualizar snapshot
+    cachedStates.current[selectedNevera.id] = {
+      año,
+      mes,
+      lecturas: nuevasLecturas,
+      lecturasOriginales: nuevasLecturas,
+      firmas,
+      info,
+    };
+
+    await saveDeviceDraft();
 
     // Guardar inmediatamente en DB
     const res = await fetch("/api/neveras-registros", {
@@ -229,10 +449,10 @@ export default function NeverasRegistroPage() {
     setPendingAdd(null);
     setInputTemp("");
     setInputDia(String(nextDia));
-    showToast(`Lectura del día ${pendingAdd.dia} registrada con firma ✓`);
+    showToast(`Lectura del día ${pendingAdd.dia} registrada ✓`);
   };
 
-  // ── Guardar mensual: responsables, dispositivo, observaciones, firma mensual
+  // ── Guardar mensual: responsables, observaciones y confirmación mensual ───
   const pedirFirmaMensual = () => {
     if (!selectedNevera) return;
     if (!info.responsable_manana.trim() && !info.responsable_tarde.trim() && !info.responsable_noche.trim()) {
@@ -245,30 +465,53 @@ export default function NeverasRegistroPage() {
   const handleSaveMensual = async ({ firma, jornada }: { firma: string; jornada?: JornadaKey }) => {
     if (!selectedNevera) return;
     setSaving(true);
-    const jornadaKey = jornada ?? "manana";
-    const nuevasFirmas = { ...firmas, [jornadaKey]: firma };
-    setFirmas(nuevasFirmas);
+    try {
+      const jornadaKey = jornada ?? "manana";
+      const nuevasFirmas = { ...firmas, [jornadaKey]: firma };
+      setFirmas(nuevasFirmas);
+      cachedStates.current[selectedNevera.id] = {
+        año,
+        mes,
+        lecturas,
+        lecturasOriginales: lecturasOriginales.current,
+        firmas: nuevasFirmas,
+        info,
+      };
 
-    const res = await fetch("/api/neveras-registros", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildSaveBody(lecturas, nuevasFirmas)),
-    });
-    setSaving(false);
-    if (!res.ok) throw new Error((await res.json()).error);
-    showToast("Registro mensual guardado ✓");
+      await saveDeviceDraft();
+
+      const res = await fetch("/api/neveras-registros", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildSaveBody(lecturas, nuevasFirmas)),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      showToast("Registro mensual guardado ✓");
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── Navegación de mes ──────────────────────────────────────────────────────
   const navMes = (d: number) => {
+    cacheCurrentNeveraState();
     let m = mes + d, a = año;
     if (m > 12) { m = 1; a++; }
     if (m < 1)  { m = 12; a--; }
     setMes(m); setAño(a);
   };
 
-  const fc = parseFloat(info.factor_correccion) || 0;
+  const fc = parseFloat(deviceDraft.factor_correccion) || 0;
+  const printInfo = {
+    dispositivo: deviceDraft.dispositivo,
+    marca: deviceDraft.dispositivo_marca,
+    modelo: deviceDraft.dispositivo_modelo,
+    serial: deviceDraft.dispositivo_serial,
+    certificado: deviceDraft.certificado,
+    factor_correccion: deviceDraft.factor_correccion,
+    ...info,
+  };
 
-  // Datos de prueba: genera lecturas sin firma (cubiertas por la firma mensual)
+  // Datos de prueba: genera lecturas sin confirmación de responsable
   const cargarDatosPrueba = () => {
     const nuevas: LecturasNevera = {};
     const dias = getDiasEnMes(mes, año);
@@ -292,7 +535,9 @@ export default function NeverasRegistroPage() {
         nombreDocumento="FORMATO PARA REGISTRO DE TEMPERATURA DE LA CADENA DE FRÍO" />
       <div className="card text-center py-12">
         <Refrigerator size={44} className="text-gray-200 mx-auto mb-3"/>
-        <p className="text-gray-500 mb-4">No hay neveras activas.</p>
+        <p className="text-gray-500 mb-4">
+          {loadError ?? "No hay neveras activas."}
+        </p>
         <Link href="/neveras" className="btn-success"><Plus size={15}/> Crear nevera</Link>
       </div>
       <HospitalFooter />
@@ -313,9 +558,16 @@ export default function NeverasRegistroPage() {
       <HospitalHeader codigo="M-GADT-LAB-F-029" version="2"
         nombreDocumento="FORMATO PARA REGISTRO DE TEMPERATURA DE LA CADENA DE FRÍO" />
 
+      {loadError && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 no-print">
+          <AlertCircle size={16} />
+          {loadError}
+        </div>
+      )}
+
       {/* ─── Metadatos ───────────────────────────────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs no-print">
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 divide-x divide-y divide-gray-200">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 divide-x divide-y divide-gray-200">
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Mes</p>
             <div className="flex items-center gap-1">
@@ -332,30 +584,35 @@ export default function NeverasRegistroPage() {
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Nevera</p>
             <select className="w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs"
               value={selectedNevera?.id || ""}
-              onChange={e => setSelectedNevera(neveras.find(n => n.id === e.target.value) || null)}>
+              onChange={e => handleNeveraChange(e.target.value)}>
               {neveras.map(n => <option key={n.id} value={n.id}>{n.nombre}</option>)}
             </select>
           </div>
           <div className="px-3 py-2">
+            <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Dispositivo</p>
+            <input className={DEVICE_INPUT_CLASS}
+              value={deviceDraft.dispositivo} onChange={e => updateDeviceDraft("dispositivo", e.target.value)} onBlur={persistDeviceDraft} placeholder="—" />
+          </div>
+          <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Marca</p>
-            <input className="w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
-              value={info.marca} onChange={e => setInfo(i => ({...i, marca: e.target.value}))} placeholder="—"/>
+            <input className={DEVICE_INPUT_CLASS}
+              value={deviceDraft.dispositivo_marca} onChange={e => updateDeviceDraft("dispositivo_marca", e.target.value)} onBlur={persistDeviceDraft} placeholder="—" />
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Modelo</p>
-            <input className="w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
-              value={info.modelo} onChange={e => setInfo(i => ({...i, modelo: e.target.value}))} placeholder="—"/>
+            <input className={DEVICE_INPUT_CLASS}
+              value={deviceDraft.dispositivo_modelo} onChange={e => updateDeviceDraft("dispositivo_modelo", e.target.value)} onBlur={persistDeviceDraft} placeholder="—" />
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Serial</p>
-            <input className="w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
-              value={info.serial} onChange={e => setInfo(i => ({...i, serial: e.target.value}))} placeholder="—"/>
+            <input className={DEVICE_INPUT_CLASS}
+              value={deviceDraft.dispositivo_serial} onChange={e => updateDeviceDraft("dispositivo_serial", e.target.value)} onBlur={persistDeviceDraft} placeholder="—" />
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">F. Corrección</p>
             <input type="number" step="0.01"
               className="w-full bg-transparent font-bold text-hsa-green focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
-              value={info.factor_correccion} onChange={e => setInfo(i => ({...i, factor_correccion: e.target.value}))} placeholder="0"/>
+              value={deviceDraft.factor_correccion} onChange={e => updateDeviceDraft("factor_correccion", e.target.value)} onBlur={persistDeviceDraft} placeholder="0" />
           </div>
         </div>
 
@@ -376,14 +633,14 @@ export default function NeverasRegistroPage() {
           <div className="px-3 py-1.5">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-0.5 text-[10px]">Certificado</p>
             <input className="w-full bg-transparent text-gray-600 focus:outline-none text-[10px] border-b border-transparent focus:border-gray-300 transition-colors"
-              value={info.certificado} onChange={e => setInfo(i => ({...i, certificado: e.target.value}))} placeholder="—"/>
+              value={deviceDraft.certificado} onChange={e => updateDeviceDraft("certificado", e.target.value)} onBlur={persistDeviceDraft} placeholder="—" />
           </div>
           <div className="px-3 py-1.5 col-span-2 flex items-center gap-2 justify-end no-print">
             <button onClick={cargarDatosPrueba}
               className="flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-[11px] font-semibold hover:bg-amber-200 transition-colors">
               🧪 Prueba
             </button>
-            {/* Guardar mensual: responsables + dispositivo + firma mensual */}
+            {/* Guardar mensual: responsables + confirmación mensual */}
             <button onClick={pedirFirmaMensual} disabled={saving || loading}
               className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
               style={{ backgroundColor: "#006b3c" }}
@@ -427,7 +684,7 @@ export default function NeverasRegistroPage() {
             rangoMin={rangoMin} rangoMax={rangoMax}
             factorCorreccion={fc} />
 
-          {/* ─── Ingreso de lectura (firma requerida por entrada) ────────── */}
+          {/* ─── Ingreso de lectura (confirmación requerida por entrada) ─── */}
           <div className="border-t border-gray-100 bg-gray-50/50 no-print">
 
             {/* Selector de jornada */}
@@ -455,7 +712,7 @@ export default function NeverasRegistroPage() {
               )}
             </div>
 
-            {/* Inputs + botón Firmar y agregar */}
+              {/* Inputs + botón Confirmar y agregar */}
             <div className="flex items-center gap-3 px-4 pb-3 flex-wrap">
               <div className="flex items-center gap-1">
                 <span className="text-xs text-gray-500">Día</span>
@@ -477,12 +734,12 @@ export default function NeverasRegistroPage() {
                   → {(parseFloat(inputTemp) + fc).toFixed(1)}°C corregida
                 </span>
               )}
-              {/* Botón principal: abre modal de firma antes de registrar */}
+              {/* Botón principal: abre modal de confirmación antes de registrar */}
               <button onClick={agregar} disabled={!inputTemp}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-40"
                 style={{ backgroundColor: inputTemp ? J_COLOR[jornadaAdd] : "#9ca3af" }}>
                 <PenLine size={12}/>
-                Firmar y agregar
+                Confirmar y agregar
               </button>
             </div>
           </div>
@@ -534,7 +791,7 @@ export default function NeverasRegistroPage() {
         mes={mes}
         año={año}
         neveraNombre={selectedNevera?.nombre ?? ""}
-        info={info}
+        info={printInfo}
         firmas={firmas}
         rangoMin={rangoMin}
         rangoMax={rangoMax}
@@ -542,8 +799,8 @@ export default function NeverasRegistroPage() {
 
       <HospitalFooter />
 
-      {/* ── Modal de firma POR LECTURA ───────────────────────────────────── */}
       <div className="no-print">
+        {/* ── Modal de confirmación POR LECTURA ────────────────────────────── */}
         <FirmaGuardadoModal
           open={firmaModalAdd}
           onClose={() => { setFirmaModalAdd(false); setPendingAdd(null); }}
@@ -556,12 +813,12 @@ export default function NeverasRegistroPage() {
           }}
           titulo={
             pendingAdd
-              ? `Firmar lectura — Día ${pendingAdd.dia} · ${J_LABEL[jornadaAdd]} · ${pendingAdd.temp}°C`
-              : "Firmar lectura"
+              ? `Confirmar lectura — Día ${pendingAdd.dia} · ${J_LABEL[jornadaAdd]} · ${pendingAdd.temp}°C`
+              : "Confirmar lectura"
           }
         />
 
-        {/* ── Modal de firma MENSUAL (responsables + dispositivo) ──────────── */}
+        {/* ── Modal de confirmación MENSUAL ────────────────────────────────── */}
         <FirmaGuardadoModal
           open={firmaModal}
           onClose={() => setFirmaModal(false)}
@@ -571,7 +828,7 @@ export default function NeverasRegistroPage() {
             tarde:  info.responsable_tarde,
             noche:  info.responsable_noche,
           }}
-          titulo="Guardar registro mensual — F-029"
+          titulo="Confirmar registro mensual — F-029"
         />
       </div>
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
-import { Pen, Trash2, CheckCircle, X, Save, Loader2, AlertCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle, ShieldCheck, X, Save, Loader2, AlertCircle } from "lucide-react";
 
 type Jornada = "manana" | "tarde" | "noche";
 
@@ -15,7 +15,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
   /**
-   * Callback que recibe la firma (base64) y, si aplica, la jornada.
+   * Callback de confirmación. Envía `firma` vacía solo por compatibilidad con
+   * columnas legacy; el flujo actual no captura firma dibujada.
    * Debe retornar una Promise que resuelve cuando el guardado termina.
    */
   onConfirm: (params: { firma: string; jornada?: Jornada }) => Promise<void>;
@@ -25,7 +26,7 @@ interface Props {
   responsable?: string;
   /** Título del modal */
   titulo?: string;
-  /** Pre-selecciona la jornada al abrir (útil para firma por lectura individual) */
+  /** Pre-selecciona la jornada al abrir (útil para confirmar una lectura individual) */
   jornadaDefault?: Jornada;
 }
 
@@ -38,10 +39,6 @@ const JORNADAS: { key: Jornada; label: string; color: string }[] = [
 export default function FirmaGuardadoModal({
   open, onClose, onConfirm, responsables, responsable, titulo, jornadaDefault,
 }: Props) {
-  const canvasRef    = useRef<HTMLCanvasElement>(null);
-  const lastPos      = useRef<{ x: number; y: number } | null>(null);
-  const [drawing,    setDrawing]    = useState(false);
-  const [hasStroke,  setHasStroke]  = useState(false);
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState("");
   const [jornada,    setJornada]    = useState<Jornada>("manana");
@@ -49,68 +46,13 @@ export default function FirmaGuardadoModal({
   /* ── Reset al abrir ──────────────────────────────────── */
   useEffect(() => {
     if (open) {
-      clearCanvas();
       setError("");
       setSaving(false);
       setJornada(jornadaDefault ?? "manana");
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, jornadaDefault]);
 
-  /* ── Canvas helpers ──────────────────────────────────── */
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    ctx?.clearRect(0, 0, canvas.width, canvas.height);
-    setHasStroke(false);
-  };
-
-  const getPos = (e: React.MouseEvent | React.TouchEvent) => {
-    const canvas = canvasRef.current!;
-    const rect   = canvas.getBoundingClientRect();
-    const scaleX = canvas.width  / rect.width;
-    const scaleY = canvas.height / rect.height;
-    if ("touches" in e) {
-      const t = e.touches[0];
-      return { x: (t.clientX - rect.left) * scaleX, y: (t.clientY - rect.top) * scaleY };
-    }
-    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
-  };
-
-  const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
-    setDrawing(true);
-    lastPos.current = getPos(e);
-  }, []);
-
-  const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    if (!drawing) return;
-    e.preventDefault();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const curr = getPos(e);
-    const prev = lastPos.current ?? curr;
-    ctx.beginPath();
-    ctx.moveTo(prev.x, prev.y);
-    ctx.quadraticCurveTo(prev.x, prev.y, (prev.x + curr.x) / 2, (prev.y + curr.y) / 2);
-    ctx.strokeStyle = "#006b3c";
-    ctx.lineWidth   = 2.5;
-    ctx.lineCap     = "round";
-    ctx.lineJoin    = "round";
-    ctx.stroke();
-    lastPos.current = curr;
-    setHasStroke(true);
-  }, [drawing]);
-
-  const endDraw = useCallback(() => {
-    setDrawing(false);
-    lastPos.current = null;
-  }, []);
-
-  /* ── Nombre a mostrar bajo el canvas ─────────────────── */
+  /* ── Nombre a mostrar bajo la confirmación ────────────── */
   const nombreFirmante = responsables
     ? (responsables[jornada] || "——")
     : (responsable || "——");
@@ -121,24 +63,18 @@ export default function FirmaGuardadoModal({
     if (responsables && !responsables[jornada]?.trim()) {
       setError(`Completa el nombre del responsable de ${
         jornada === "manana" ? "Mañana" : jornada === "tarde" ? "Tarde" : "Noche"
-      } antes de firmar.`);
+      } antes de confirmar.`);
       return;
     }
     // 2. Validar que haya nombre para el responsable único (F-021 sin jornadas)
     if (responsable !== undefined && !responsable?.trim()) {
-      setError("Completa el nombre del responsable antes de firmar.");
+      setError("Completa el nombre del responsable antes de confirmar.");
       return;
     }
-    // 3. Validar que haya firma dibujada
-    if (!hasStroke) { setError("Dibuja tu firma antes de guardar."); return; }
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
     setSaving(true);
     setError("");
     try {
-      const firma = canvas.toDataURL("image/png");
-      await onConfirm({ firma, jornada: responsables ? jornada : undefined });
+      await onConfirm({ firma: "", jornada: responsables ? jornada : undefined });
       onClose();
     } catch (err: unknown) {
       setError((err as Error).message || "Error al guardar");
@@ -163,9 +99,9 @@ export default function FirmaGuardadoModal({
                         bg-hsa-green-pale/60
                         border-b border-hsa-green/20">
           <div className="flex items-center gap-2">
-            <Pen size={16} className="text-hsa-green"/>
+            <ShieldCheck size={16} className="text-hsa-green"/>
             <h2 className="font-bold text-hsa-green text-sm">
-              {titulo ?? "Firmar y guardar registro"}
+              {titulo ?? "Confirmar guardado"}
             </h2>
           </div>
           <button onClick={onClose}
@@ -203,60 +139,24 @@ export default function FirmaGuardadoModal({
             </div>
           )}
 
-          {/* ── Canvas de firma ────────────────────────────── */}
+          {/* ── Confirmación sin firma dibujada ─────────────── */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
-                Firmá aquí
+            <div className="rounded-xl border border-hsa-green/20 bg-hsa-green-pale/60 px-4 py-3 text-center">
+              <CheckCircle size={22} className="mx-auto mb-2 text-hsa-green"/>
+              <p className="text-sm font-semibold text-gray-700">Confirmación de responsable</p>
+              <p className="mt-1 text-xs text-gray-500">
+                No se requiere firma dibujada. El guardado queda auditado con el nombre del responsable y la fecha/hora del registro.
               </p>
-              {hasStroke && (
-                <button onClick={clearCanvas}
-                  className="flex items-center gap-1 text-[10px] text-red-400 hover:text-red-600 transition-colors">
-                  <Trash2 size={10}/> Limpiar
-                </button>
-              )}
             </div>
 
-            <div
-              className={`relative rounded-xl border-2 transition-colors overflow-hidden
-                ${hasStroke ? "border-hsa-green/60 bg-white" : "border-dashed border-gray-200 bg-gray-50"}
-                ${drawing ? "border-hsa-green" : ""}`}
-              style={{ touchAction: "none" }}
-            >
-              <canvas
-                ref={canvasRef}
-                width={360}
-                height={100}
-                className="w-full"
-                onMouseDown={startDraw}
-                onMouseMove={draw}
-                onMouseUp={endDraw}
-                onMouseLeave={endDraw}
-                onTouchStart={startDraw}
-                onTouchMove={draw}
-                onTouchEnd={endDraw}
-                style={{ cursor: "crosshair" }}
-              />
-              {!hasStroke && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none gap-1">
-                  <Pen size={18} className="text-gray-300"/>
-                  <span className="text-[11px] text-gray-300">
-                    Dibuja tu firma
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Línea de nombre */}
+            {/* Nombre del responsable */}
             <div className="mt-2 pt-1.5 border-t border-gray-200 text-center">
               <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
                 {nombreFirmante}
               </p>
-              {hasStroke && (
-                <div className="flex items-center justify-center gap-1 mt-0.5 text-[10px] text-hsa-green font-medium">
-                  <CheckCircle size={10}/> Firma capturada
-                </div>
-              )}
+              <div className="flex items-center justify-center gap-1 mt-0.5 text-[10px] text-hsa-green font-medium">
+                <CheckCircle size={10}/> Responsable validado
+              </div>
             </div>
           </div>
 
@@ -275,16 +175,16 @@ export default function FirmaGuardadoModal({
                          hover:bg-gray-50 transition-colors disabled:opacity-50">
               Cancelar
             </button>
-            <button onClick={handleConfirm} disabled={saving || !hasStroke}
+            <button onClick={handleConfirm} disabled={saving}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl
-                         bg-hsa-green text-white text-sm font-semibold
-                         transition-colors disabled:opacity-40"
-              style={{ backgroundColor: saving ? undefined : hasStroke ? "#006b3c" : undefined }}
-              onMouseEnter={e => { if (!saving && hasStroke) (e.target as HTMLElement).style.backgroundColor = "#004d2a"; }}
+                          bg-hsa-green text-white text-sm font-semibold
+                          transition-colors disabled:opacity-40"
+              style={{ backgroundColor: saving ? undefined : "#006b3c" }}
+              onMouseEnter={e => { if (!saving) (e.target as HTMLElement).style.backgroundColor = "#004d2a"; }}
               onMouseLeave={e => { (e.target as HTMLElement).style.backgroundColor = "#006b3c"; }}
             >
               {saving ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}
-              {saving ? "Guardando…" : "Guardar con firma"}
+              {saving ? "Guardando…" : "Confirmar y guardar"}
             </button>
           </div>
         </div>
