@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, PenLine, X, Save, Loader2, AlertCircle } from "lucide-react";
+import { CheckCircle, ShieldCheck, X, Save, Loader2, AlertCircle } from "lucide-react";
 
 type Jornada = "manana" | "tarde" | "noche";
 
@@ -15,7 +15,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
   /**
-   * Callback que recibe una firma vacía y, si aplica, la jornada.
+   * Callback de confirmación. Envía `firma` vacía solo por compatibilidad con
+   * columnas legacy; el flujo actual no captura firma dibujada.
    * Debe retornar una Promise que resuelve cuando el guardado termina.
    */
   onConfirm: (params: { firma: string; jornada?: Jornada }) => Promise<void>;
@@ -25,7 +26,7 @@ interface Props {
   responsable?: string;
   /** Título del modal */
   titulo?: string;
-  /** Pre-selecciona la jornada al abrir (útil para firma por lectura individual) */
+  /** Pre-selecciona la jornada al abrir (útil para confirmar una lectura individual) */
   jornadaDefault?: Jornada;
 }
 
@@ -51,7 +52,7 @@ export default function FirmaGuardadoModal({
     }
   }, [open, jornadaDefault]);
 
-  /* ── Nombre a mostrar bajo el canvas ─────────────────── */
+  /* ── Nombre a mostrar bajo la confirmación ────────────── */
   const nombreFirmante = responsables
     ? (responsables[jornada] || "——")
     : (responsable || "——");
@@ -62,12 +63,12 @@ export default function FirmaGuardadoModal({
     if (responsables && !responsables[jornada]?.trim()) {
       setError(`Completa el nombre del responsable de ${
         jornada === "manana" ? "Mañana" : jornada === "tarde" ? "Tarde" : "Noche"
-      } antes de firmar.`);
+      } antes de confirmar.`);
       return;
     }
     // 2. Validar que haya nombre para el responsable único (F-021 sin jornadas)
     if (responsable !== undefined && !responsable?.trim()) {
-      setError("Completa el nombre del responsable antes de firmar.");
+      setError("Completa el nombre del responsable antes de confirmar.");
       return;
     }
     setSaving(true);
@@ -98,7 +99,7 @@ export default function FirmaGuardadoModal({
                         bg-hsa-green-pale/60
                         border-b border-hsa-green/20">
           <div className="flex items-center gap-2">
-            <PenLine size={16} className="text-hsa-green"/>
+            <ShieldCheck size={16} className="text-hsa-green"/>
             <h2 className="font-bold text-hsa-green text-sm">
               {titulo ?? "Confirmar guardado"}
             </h2>
@@ -148,7 +149,7 @@ export default function FirmaGuardadoModal({
               </p>
             </div>
 
-            {/* Línea de nombre */}
+            {/* Nombre del responsable */}
             <div className="mt-2 pt-1.5 border-t border-gray-200 text-center">
               <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
                 {nombreFirmante}

@@ -14,6 +14,7 @@ create table if not exists public.neveras (
   codigo               text not null unique,
   ubicacion            text not null default '',
   activa               boolean not null default true,
+  dispositivo          text not null default '',
   dispositivo_marca    text not null default '',
   dispositivo_modelo   text not null default '',
   dispositivo_serial   text not null default '',
@@ -123,6 +124,7 @@ alter table public.registros_neveras
 
 -- ─── Migración: dispositivo de neveras en tabla base ─────────────────────────
 alter table public.neveras
+  add column if not exists dispositivo         text not null default '',
   add column if not exists dispositivo_marca   text not null default '',
   add column if not exists dispositivo_modelo  text not null default '',
   add column if not exists dispositivo_serial  text not null default '',
@@ -130,8 +132,8 @@ alter table public.neveras
   add column if not exists factor_correccion   text not null default '0';
 
 -- ─── Datos de ejemplo ─────────────────────────────────────────────────────────
-insert into public.neveras (nombre, codigo, ubicacion, dispositivo_marca, dispositivo_modelo, dispositivo_serial, certificado, factor_correccion) values
-  ('Nevera Reactivos A', 'NV-001', 'Laboratorio Clínico', '', '', '', '', '0'),
-  ('Nevera Muestras B',  'NV-002', 'Laboratorio Clínico', '', '', '', '', '0'),
-  ('Nevera Medicamentos','NV-003', 'Farmacia', '', '', '', '', '0')
+insert into public.neveras (nombre, codigo, ubicacion, dispositivo, dispositivo_marca, dispositivo_modelo, dispositivo_serial, certificado, factor_correccion) values
+  ('Nevera Reactivos A', 'NV-001', 'Laboratorio Clínico', '', '', '', '', '', '0'),
+  ('Nevera Muestras B',  'NV-002', 'Laboratorio Clínico', '', '', '', '', '', '0'),
+  ('Nevera Medicamentos','NV-003', 'Farmacia', '', '', '', '', '', '0')
 on conflict (codigo) do nothing;

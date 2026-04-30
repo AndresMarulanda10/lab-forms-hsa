@@ -2,6 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import type { NeveraInsert } from "@/lib/types";
 
+const NEVERA_INSERT_FIELDS = [
+  "nombre",
+  "codigo",
+  "ubicacion",
+  "activa",
+  "dispositivo",
+  "dispositivo_marca",
+  "dispositivo_modelo",
+  "dispositivo_serial",
+  "certificado",
+  "factor_correccion",
+] as const satisfies readonly (keyof NeveraInsert)[];
+
+function sanitizeNeveraInsert(body: Partial<NeveraInsert>): NeveraInsert {
+  return Object.fromEntries(
+    NEVERA_INSERT_FIELDS
+      .filter(field => body[field] !== undefined)
+      .map(field => [field, body[field]]),
+  ) as NeveraInsert;
+}
+
 export async function GET() {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -15,7 +36,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
-  const body: NeveraInsert = await req.json();
+  const body = sanitizeNeveraInsert(await req.json());
   const { data, error } = await supabase
     .from("neveras")
     .insert(body)

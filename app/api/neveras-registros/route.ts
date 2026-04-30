@@ -3,6 +3,7 @@ import { createClient } from "@/utils/supabase/server";
 import type { RegistroNeveraInsert } from "@/lib/types";
 
 type LegacyRegistroNeveraBody = RegistroNeveraInsert & {
+  dispositivo?: string;
   dispositivo_marca?: string;
   dispositivo_modelo?: string;
   dispositivo_serial?: string;
@@ -12,6 +13,7 @@ type LegacyRegistroNeveraBody = RegistroNeveraInsert & {
 
 function stripLegacyDeviceFields(body: LegacyRegistroNeveraBody): RegistroNeveraInsert {
   const {
+    dispositivo: _dispositivo,
     dispositivo_marca: _dispositivoMarca,
     dispositivo_modelo: _dispositivoModelo,
     dispositivo_serial: _dispositivoSerial,

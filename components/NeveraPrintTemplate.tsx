@@ -5,6 +5,7 @@ import { getDiasEnMes, lecturaClave, MESES, valorDeLectura } from "@/lib/types";
 import PrintChart, { type PrintDataPoint } from "@/components/PrintChart";
 
 interface NeveraPrintInfo {
+  dispositivo: string;
   marca: string;
   modelo: string;
   serial: string;
@@ -108,7 +109,8 @@ export default function NeveraPrintTemplate({
   const diasEnMes = getDiasEnMes(mes, año);
   const fc = parseCorrectionFactor(info.factor_correccion);
   const data = buildNeveraPrintData(lecturas, fc, diasEnMes);
-  const metadata = `Mes: ${MESES[mes - 1]} ${año} · Nevera: ${neveraNombre} · Dispositivo: ${info.marca || ""} ${info.modelo || ""} · Serial: ${info.serial || ""} · Certificado: ${info.certificado || ""} · Rango: ${rangoMin}–${rangoMax} °C · Factor corrección: ${info.factor_correccion || "0"}`;
+  const deviceName = [info.dispositivo, info.marca, info.modelo].filter(Boolean).join(" ");
+  const metadata = `Mes: ${MESES[mes - 1]} ${año} · Nevera: ${neveraNombre} · Dispositivo: ${deviceName} · Serial: ${info.serial || ""} · Certificado: ${info.certificado || ""} · Rango: ${rangoMin}–${rangoMax} °C · Factor corrección: ${info.factor_correccion || "0"}`;
 
   return (
     <div className={`space-y-1 bg-white text-gray-900 ${className}`.trim()}>

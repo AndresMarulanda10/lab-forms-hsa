@@ -20,6 +20,7 @@ const empty: Omit<Nevera, "id" | "created_at" | "updated_at"> = {
   codigo: "",
   ubicacion: "",
   activa: true,
+  dispositivo: "",
   dispositivo_marca: "",
   dispositivo_modelo: "",
   dispositivo_serial: "",
@@ -115,6 +116,7 @@ export default function NeverasPage() {
       codigo: n.codigo,
       ubicacion: n.ubicacion,
       activa: n.activa,
+      dispositivo: n.dispositivo ?? "",
       dispositivo_marca: n.dispositivo_marca ?? "",
       dispositivo_modelo: n.dispositivo_modelo ?? "",
       dispositivo_serial: n.dispositivo_serial ?? "",
@@ -209,7 +211,16 @@ export default function NeverasPage() {
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-hsa-green">
                 Dispositivo de medición
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-6 gap-4">
+                <div>
+                  <label className="label">Dispositivo</label>
+                  <input
+                    className="input"
+                    value={form.dispositivo}
+                    onChange={(e) => setForm((f) => ({ ...f, dispositivo: e.target.value }))}
+                    placeholder="Ej: Termómetro digital"
+                  />
+                </div>
                 <div>
                   <label className="label">Marca</label>
                   <input
@@ -327,7 +338,7 @@ export default function NeverasPage() {
                     <td className="py-3 px-2 text-gray-500 hidden lg:table-cell">
                       <div className="space-y-0.5">
                         <p className="font-medium text-gray-700">
-                          {[n.dispositivo_marca, n.dispositivo_modelo].filter(Boolean).join(" ") || "—"}
+                          {[n.dispositivo, n.dispositivo_marca, n.dispositivo_modelo].filter(Boolean).join(" · ") || "—"}
                         </p>
                         <p className="text-xs text-gray-400">
                           Serial: {n.dispositivo_serial || "—"} · Cert: {n.certificado || "—"} · F: {n.factor_correccion || "0"}

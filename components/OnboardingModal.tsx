@@ -99,7 +99,7 @@ const FIRMA_DEMO = (
   <div className="flex justify-center gap-3 mt-3">
     <div className="flex flex-col items-center gap-1.5 px-3 py-2 bg-white/15 rounded-xl">
       <PenLine size={13} className="text-green-100"/>
-      <span className="text-[9px] text-green-100 font-semibold text-center leading-tight">Firmar y<br/>agregar</span>
+      <span className="text-[9px] text-green-100 font-semibold text-center leading-tight">Confirmar y<br/>agregar</span>
       <span className="text-[8px] text-green-200">por lectura</span>
     </div>
     <div className="flex flex-col items-center gap-1.5 px-3 py-2 bg-white/15 rounded-xl">

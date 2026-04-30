@@ -21,6 +21,16 @@ import {
   valorDeLectura, esLecturaAuditada,
 } from "@/lib/types";
 
+type NeveraDeviceField =
+  | "dispositivo"
+  | "dispositivo_marca"
+  | "dispositivo_modelo"
+  | "dispositivo_serial"
+  | "certificado"
+  | "factor_correccion";
+
+type NeveraDeviceDraft = Pick<Nevera, NeveraDeviceField>;
+
 // ─── Colores y etiquetas por jornada ─────────────────────────────────────────
 const J_COLOR: Record<Jornada, string> = { M: "#006b3c", T: "#d97706", N: "#4338ca" };
 const J_LABEL: Record<Jornada, string> = { M: "Mañana", T: "Tarde", N: "Noche" };
@@ -35,6 +45,26 @@ const EMPTY_INFO: RegistroNeveraFormInfo = {
   fecha_limpieza: "",
   observaciones: "",
 };
+
+const EMPTY_DEVICE_DRAFT: NeveraDeviceDraft = {
+  dispositivo: "",
+  dispositivo_marca: "",
+  dispositivo_modelo: "",
+  dispositivo_serial: "",
+  certificado: "",
+  factor_correccion: "0",
+};
+
+const DEVICE_INPUT_CLASS = "w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors";
+
+const getDeviceDraft = (nevera: Nevera | null): NeveraDeviceDraft => ({
+  dispositivo: nevera?.dispositivo ?? "",
+  dispositivo_marca: nevera?.dispositivo_marca ?? "",
+  dispositivo_modelo: nevera?.dispositivo_modelo ?? "",
+  dispositivo_serial: nevera?.dispositivo_serial ?? "",
+  certificado: nevera?.certificado ?? "",
+  factor_correccion: nevera?.factor_correccion ?? "0",
+});
 
 /** Jornada (M/T/N) → JornadaKey (manana/tarde/noche) */
 const toJornadaKey = (j: Jornada): JornadaKey =>
@@ -59,8 +89,10 @@ export default function NeverasRegistroPage() {
   const [lecturas, setLecturas] = useState<LecturasNevera>({});
   const lecturasOriginales = useRef<LecturasNevera>({});
   const cachedStates = useRef<Record<string, RegistroNeveraCachedState>>({});
+  const selectedNeveraIdRef = useRef<string | null>(null);
   const [firmas, setFirmas] = useState<Record<JornadaKey, string>>({ ...EMPTY_FIRMAS });
   const [info, setInfo] = useState<RegistroNeveraFormInfo>({ ...EMPTY_INFO });
+  const [deviceDraft, setDeviceDraft] = useState<NeveraDeviceDraft>({ ...EMPTY_DEVICE_DRAFT });
 
   // ── Ingreso por lectura ────────────────────────────────────────────────────
   const [jornadaAdd,    setJornadaAdd]    = useState<Jornada>("M");
@@ -85,11 +117,21 @@ export default function NeverasRegistroPage() {
       const arr: Nevera[] = Array.isArray(data) ? data : [];
       const activas = arr.filter(n => n.activa);
       setNeveras(activas);
-      if (activas.length > 0) setSelectedNevera(current => current ?? activas[0]);
+      if (activas.length > 0) {
+        setSelectedNevera(current => {
+          const next = current ? activas.find(n => n.id === current.id) ?? activas[0] : activas[0];
+          setDeviceDraft(getDeviceDraft(next));
+          return next;
+        });
+      }
     } catch { setNeveras([]); }
   };
 
   useEffect(() => { loadNeveras(); }, []);
+
+  useEffect(() => {
+    selectedNeveraIdRef.current = selectedNevera?.id ?? null;
+  }, [selectedNevera?.id]);
 
   useEffect(() => {
     if (!selectedNevera) return;
@@ -100,6 +142,7 @@ export default function NeverasRegistroPage() {
       lecturasOriginales.current = cached.lecturasOriginales;
       setFirmas(cached.firmas);
       setInfo(cached.info);
+      setDeviceDraft(getDeviceDraft(selectedNevera));
       setLoading(false);
       return;
     }
@@ -151,10 +194,17 @@ export default function NeverasRegistroPage() {
     };
   };
 
-  const handleNeveraChange = (neveraId: string) => {
+  const handleNeveraChange = async (neveraId: string) => {
+    try {
+      await saveDeviceDraft();
+    } catch (err: unknown) {
+      showToast((err as Error).message || "Error al guardar dispositivo", "err");
+    }
     cacheCurrentNeveraState();
     const nextNevera = neveras.find(n => n.id === neveraId) ?? null;
+    selectedNeveraIdRef.current = nextNevera?.id ?? null;
     setSelectedNevera(nextNevera);
+    setDeviceDraft(getDeviceDraft(nextNevera));
 
     if (!nextNevera) return;
     const cached = cachedStates.current[nextNevera.id];
@@ -166,6 +216,51 @@ export default function NeverasRegistroPage() {
       setFirmas(cached.firmas);
       setInfo(cached.info);
       setLoading(false);
+    }
+  };
+
+  const updateDeviceDraft = (field: NeveraDeviceField, value: string) => {
+    setDeviceDraft(current => ({ ...current, [field]: value }));
+  };
+
+  const saveDeviceDraft = async () => {
+    if (!selectedNevera) return;
+
+    const hasChanges = (Object.keys(deviceDraft) as NeveraDeviceField[]).some(
+      field => (selectedNevera[field] ?? "") !== deviceDraft[field],
+    );
+    if (!hasChanges) return;
+
+    const previousId = selectedNevera.id;
+
+    const res = await fetch(`/api/neveras/${previousId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(deviceDraft),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    const updated: Nevera = await res.json();
+
+    if (selectedNeveraIdRef.current === previousId) {
+      setSelectedNevera(updated);
+      setDeviceDraft(getDeviceDraft(updated));
+    }
+    cachedStates.current[previousId] = {
+      año,
+      mes,
+      lecturas,
+      lecturasOriginales: lecturasOriginales.current,
+      firmas,
+      info,
+    };
+    setNeveras(current => current.map(n => (n.id === updated.id ? updated : n)));
+  };
+
+  const persistDeviceDraft = async () => {
+    try {
+      await saveDeviceDraft();
+    } catch (err: unknown) {
+      showToast((err as Error).message || "Error al guardar dispositivo", "err");
     }
   };
 
@@ -260,6 +355,8 @@ export default function NeverasRegistroPage() {
       info,
     };
 
+    await saveDeviceDraft();
+
     // Guardar inmediatamente en DB
     const res = await fetch("/api/neveras-registros", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -288,25 +385,30 @@ export default function NeverasRegistroPage() {
   const handleSaveMensual = async ({ firma, jornada }: { firma: string; jornada?: JornadaKey }) => {
     if (!selectedNevera) return;
     setSaving(true);
-    const jornadaKey = jornada ?? "manana";
-    const nuevasFirmas = { ...firmas, [jornadaKey]: firma };
-    setFirmas(nuevasFirmas);
-    cachedStates.current[selectedNevera.id] = {
-      año,
-      mes,
-      lecturas,
-      lecturasOriginales: lecturasOriginales.current,
-      firmas: nuevasFirmas,
-      info,
-    };
+    try {
+      const jornadaKey = jornada ?? "manana";
+      const nuevasFirmas = { ...firmas, [jornadaKey]: firma };
+      setFirmas(nuevasFirmas);
+      cachedStates.current[selectedNevera.id] = {
+        año,
+        mes,
+        lecturas,
+        lecturasOriginales: lecturasOriginales.current,
+        firmas: nuevasFirmas,
+        info,
+      };
 
-    const res = await fetch("/api/neveras-registros", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildSaveBody(lecturas, nuevasFirmas)),
-    });
-    setSaving(false);
-    if (!res.ok) throw new Error((await res.json()).error);
-    showToast("Registro mensual guardado ✓");
+      await saveDeviceDraft();
+
+      const res = await fetch("/api/neveras-registros", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildSaveBody(lecturas, nuevasFirmas)),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      showToast("Registro mensual guardado ✓");
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── Navegación de mes ──────────────────────────────────────────────────────
@@ -318,17 +420,18 @@ export default function NeverasRegistroPage() {
     setMes(m); setAño(a);
   };
 
-  const fc = parseFloat(selectedNevera?.factor_correccion ?? "0") || 0;
+  const fc = parseFloat(deviceDraft.factor_correccion) || 0;
   const printInfo = {
-    marca: selectedNevera?.dispositivo_marca ?? "",
-    modelo: selectedNevera?.dispositivo_modelo ?? "",
-    serial: selectedNevera?.dispositivo_serial ?? "",
-    certificado: selectedNevera?.certificado ?? "",
-    factor_correccion: selectedNevera?.factor_correccion ?? "0",
+    dispositivo: deviceDraft.dispositivo,
+    marca: deviceDraft.dispositivo_marca,
+    modelo: deviceDraft.dispositivo_modelo,
+    serial: deviceDraft.dispositivo_serial,
+    certificado: deviceDraft.certificado,
+    factor_correccion: deviceDraft.factor_correccion,
     ...info,
   };
 
-  // Datos de prueba: genera lecturas sin firma dibujada
+  // Datos de prueba: genera lecturas sin confirmación de responsable
   const cargarDatosPrueba = () => {
     const nuevas: LecturasNevera = {};
     const dias = getDiasEnMes(mes, año);
@@ -375,7 +478,7 @@ export default function NeverasRegistroPage() {
 
       {/* ─── Metadatos ───────────────────────────────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs no-print">
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 divide-x divide-y divide-gray-200">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 divide-x divide-y divide-gray-200">
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Mes</p>
             <div className="flex items-center gap-1">
@@ -397,20 +500,30 @@ export default function NeverasRegistroPage() {
             </select>
           </div>
           <div className="px-3 py-2">
+            <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Dispositivo</p>
+            <input className={DEVICE_INPUT_CLASS}
+              value={deviceDraft.dispositivo} onChange={e => updateDeviceDraft("dispositivo", e.target.value)} onBlur={persistDeviceDraft} placeholder="—" />
+          </div>
+          <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Marca</p>
-            <p className="font-medium text-gray-700 text-xs">{selectedNevera?.dispositivo_marca || "—"}</p>
+            <input className={DEVICE_INPUT_CLASS}
+              value={deviceDraft.dispositivo_marca} onChange={e => updateDeviceDraft("dispositivo_marca", e.target.value)} onBlur={persistDeviceDraft} placeholder="—" />
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Modelo</p>
-            <p className="font-medium text-gray-700 text-xs">{selectedNevera?.dispositivo_modelo || "—"}</p>
+            <input className={DEVICE_INPUT_CLASS}
+              value={deviceDraft.dispositivo_modelo} onChange={e => updateDeviceDraft("dispositivo_modelo", e.target.value)} onBlur={persistDeviceDraft} placeholder="—" />
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Serial</p>
-            <p className="font-medium text-gray-700 text-xs">{selectedNevera?.dispositivo_serial || "—"}</p>
+            <input className={DEVICE_INPUT_CLASS}
+              value={deviceDraft.dispositivo_serial} onChange={e => updateDeviceDraft("dispositivo_serial", e.target.value)} onBlur={persistDeviceDraft} placeholder="—" />
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">F. Corrección</p>
-            <p className="font-bold text-hsa-green text-xs">{selectedNevera?.factor_correccion || "0"}</p>
+            <input type="number" step="0.01"
+              className="w-full bg-transparent font-bold text-hsa-green focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
+              value={deviceDraft.factor_correccion} onChange={e => updateDeviceDraft("factor_correccion", e.target.value)} onBlur={persistDeviceDraft} placeholder="0" />
           </div>
         </div>
 
@@ -430,7 +543,8 @@ export default function NeverasRegistroPage() {
           </div>
           <div className="px-3 py-1.5">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-0.5 text-[10px]">Certificado</p>
-            <p className="text-gray-600 text-[10px]">{selectedNevera?.certificado || "—"}</p>
+            <input className="w-full bg-transparent text-gray-600 focus:outline-none text-[10px] border-b border-transparent focus:border-gray-300 transition-colors"
+              value={deviceDraft.certificado} onChange={e => updateDeviceDraft("certificado", e.target.value)} onBlur={persistDeviceDraft} placeholder="—" />
           </div>
           <div className="px-3 py-1.5 col-span-2 flex items-center gap-2 justify-end no-print">
             <button onClick={cargarDatosPrueba}

@@ -37,6 +37,7 @@ export interface Nevera {
   codigo: string;
   ubicacion: string;
   activa: boolean;
+  dispositivo: string;
   dispositivo_marca: string;
   dispositivo_modelo: string;
   dispositivo_serial: string;
