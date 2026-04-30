@@ -212,7 +212,7 @@ export default function RegistroChart({
               name={J_LABEL[j]}
               stroke={J_COLOR[j]}
               strokeWidth={2}
-              connectNulls={false}
+              connectNulls={true}
               dot={({ key: _k, cx, cy, payload }: { key: string; cx: number; cy: number; payload: DataPoint }) => {
                 const v = payload?.[j as keyof DataPoint] as number | null | undefined;
                 if (!cx || !cy || v == null) return <g key={_k} />;
@@ -242,7 +242,7 @@ export default function RegistroChart({
                 strokeWidth={1.5}
                 strokeDasharray="5 3"
                 strokeOpacity={0.55}
-                connectNulls={false}
+                connectNulls={true}
                 dot={false}
                 activeDot={false}
                 legendType="none"

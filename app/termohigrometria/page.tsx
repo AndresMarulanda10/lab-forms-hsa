@@ -116,7 +116,7 @@ export default function TermohigrometriaPage() {
     lecs: LecturasTermohigrometria,
     fs: typeof firmas,
     resp: string,
-    firma: string,
+    firma?: string,
   ) => ({
     año, mes, ...info,
     lecturas: lecs,
@@ -124,10 +124,10 @@ export default function TermohigrometriaPage() {
     firma_tarde:  fs.tarde,
     firma_noche:  fs.noche,
     responsable:  resp,
-    firma,
+    firma: firma ?? "",
   });
 
-  // ── Agregar lectura (abre modal de firma por entrada) ─────────────────────
+  // ── Agregar lectura (abre modal de confirmación por entrada) ──────────────
   const agregar = () => {
     // 1. Validar responsable de la jornada
     if (!responsableDeJornada(jornadaAdd).trim()) {
@@ -146,12 +146,12 @@ export default function TermohigrometriaPage() {
     const humRaw = parseFloat(inputHum);
     const hum = isNaN(humRaw) ? null : humRaw;
 
-    // 3. Guardar pending y abrir modal de firma
+    // 3. Guardar pending y abrir modal de confirmación
     setPendingAdd({ dia, temp, hum });
     setFirmaModalAdd(true);
   };
 
-  // ── Confirmar lectura con firma (auto-guarda en DB) ───────────────────────
+  // ── Confirmar lectura (auto-guarda en DB) ─────────────────────────────────
   const handleAddWithFirma = async ({ firma }: { firma: string; jornada?: JornadaKey }) => {
     if (!pendingAdd) return;
     const { dia, temp, hum } = pendingAdd;
@@ -200,10 +200,10 @@ export default function TermohigrometriaPage() {
     setInputHum("");
     setInputDia(String(dia < max ? dia + 1 : dia));
     setPendingAdd(null);
-    showToast(`Lectura día ${dia} · ${J_LABEL[jornadaAdd]} guardada con firma ✓`);
+    showToast(`Lectura día ${dia} · ${J_LABEL[jornadaAdd]} guardada ✓`);
   };
 
-  // ── Pedir firma mensual ────────────────────────────────────────────────────
+  // ── Pedir confirmación mensual ─────────────────────────────────────────────
   const pedirFirmaMensual = () => {
     if (Object.keys(lecturas).length === 0) {
       showToast("Ingresa al menos una lectura antes de guardar.", "err");
@@ -216,7 +216,7 @@ export default function TermohigrometriaPage() {
     setFirmaModal(true);
   };
 
-  // ── Guardar mes con firma ──────────────────────────────────────────────────
+  // ── Guardar mes con confirmación ───────────────────────────────────────────
   const handleSaveMensual = async ({ firma: f, jornada }: { firma: string; jornada?: JornadaKey }) => {
     setSaving(true);
 
@@ -240,7 +240,7 @@ export default function TermohigrometriaPage() {
     });
     setSaving(false);
     if (!res.ok) throw new Error((await res.json()).error);
-    showToast("Registro guardado con firma ✓");
+    showToast("Registro guardado ✓");
   };
 
   // ── Navegación de mes ──────────────────────────────────────────────────────
@@ -461,7 +461,7 @@ export default function TermohigrometriaPage() {
                 <button onClick={agregar} disabled={!inputTemp}
                   className="flex items-center gap-1 px-3 py-1.5 text-white rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
                   style={{ backgroundColor: inputTemp ? J_COLOR[jornadaAdd] : "#9ca3af" }}>
-                  <PenLine size={12}/> Firmar y agregar
+                  <PenLine size={12}/> Confirmar y agregar
                 </button>
               </div>
             </div>
@@ -526,8 +526,8 @@ export default function TermohigrometriaPage() {
 
       <HospitalFooter/>
 
-      {/* ── Modal de firma por entrada ────────────────────────────────────── */}
       <div className="no-print">
+        {/* ── Modal de confirmación por entrada ─────────────────────────────── */}
         <FirmaGuardadoModal
           open={firmaModalAdd}
           onClose={() => { setFirmaModalAdd(false); setPendingAdd(null); }}
@@ -536,12 +536,12 @@ export default function TermohigrometriaPage() {
           jornadaDefault={toJornadaKey(jornadaAdd)}
           titulo={
             pendingAdd
-              ? `Firmar lectura — Día ${pendingAdd.dia} · ${J_LABEL[jornadaAdd]} · ${pendingAdd.temp}°C${pendingAdd.hum != null ? ` · ${pendingAdd.hum}%` : ""}`
-              : "Firmar lectura"
+              ? `Confirmar lectura — Día ${pendingAdd.dia} · ${J_LABEL[jornadaAdd]} · ${pendingAdd.temp}°C${pendingAdd.hum != null ? ` · ${pendingAdd.hum}%` : ""}`
+              : "Confirmar lectura"
           }
         />
 
-        {/* ── Modal de firma mensual ────────────────────────────────────────── */}
+        {/* ── Modal de confirmación mensual ─────────────────────────────────── */}
         <FirmaGuardadoModal
           open={firmaModal}
           onClose={() => setFirmaModal(false)}
@@ -551,7 +551,7 @@ export default function TermohigrometriaPage() {
             tarde:  info.responsable_tarde,
             noche:  info.responsable_noche,
           }}
-          titulo="Guardar mes — F-021 Termohigrometría"
+          titulo="Confirmar mes — F-021 Termohigrometría"
         />
       </div>
     </div>

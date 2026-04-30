@@ -37,6 +37,11 @@ export interface Nevera {
   codigo: string;
   ubicacion: string;
   activa: boolean;
+  dispositivo_marca: string;
+  dispositivo_modelo: string;
+  dispositivo_serial: string;
+  certificado: string;
+  factor_correccion: string;
   created_at: string;
   updated_at: string;
 }
@@ -53,7 +58,7 @@ export interface LecturaHistorial {
   ts: string;      // ISO timestamp de cuándo existió este valor
   quien: string;   // responsable que lo modificó
   jornada: JornadaKey;
-  firma: string;   // base64 PNG de la firma que autorizó el cambio
+  firma?: string;  // firma legacy opcional; el flujo actual no dibuja firmas
 }
 
 /**
@@ -65,7 +70,7 @@ export interface LecturaAuditada {
   ts: string;            // ISO timestamp de cuando se guardó
   quien: string;         // nombre del responsable que firmó
   jornada: JornadaKey;   // turno de quien firmó
-  firma: string;         // base64 PNG de la firma al momento de guardar
+  firma?: string;        // firma legacy opcional; el flujo actual no dibuja firmas
   prev?: LecturaHistorial[];  // historial de versiones anteriores
 }
 
@@ -92,7 +97,7 @@ export function esLecturaAuditada(e: LecturaEntry): e is LecturaAuditada {
 export function enriquecerLecturas(
   actuales: LecturasNevera,
   originales: LecturasNevera,
-  audit: { ts: string; quien: string; jornada: JornadaKey; firma: string },
+  audit: { ts: string; quien: string; jornada: JornadaKey; firma?: string },
 ): LecturasNevera {
   const resultado: LecturasNevera = { ...originales };
 
@@ -141,7 +146,7 @@ export function enriquecerLecturas(
 export function enriquecerLecturasTermohigro(
   actuales: LecturasTermohigrometria,
   originales: LecturasTermohigrometria,
-  audit: { ts: string; quien: string; firma: string },
+  audit: { ts: string; quien: string; firma?: string },
 ): LecturasTermohigrometria {
   const resultado: LecturasTermohigrometria = { ...originales };
 
@@ -226,7 +231,7 @@ export interface RegistroTermohigrometria {
   firma_noche: string;
   // Legacy (compatibilidad)
   responsable: string;
-  firma: string;
+  firma?: string;
   observaciones: string;
   created_at: string;
   updated_at: string;
@@ -248,12 +253,6 @@ export interface RegistroNevera {
   año: number;
   mes: number; // 1-12
   lecturas: LecturasNevera;
-  // Dispositivo (termómetro)
-  dispositivo_marca: string;
-  dispositivo_modelo: string;
-  dispositivo_serial: string;
-  certificado: string;
-  factor_correccion: string;
   // Responsables
   responsable_manana: string;
   responsable_tarde: string;
@@ -273,6 +272,23 @@ export type RegistroNeveraInsert = Omit<
   RegistroNevera,
   "id" | "created_at" | "updated_at" | "nevera"
 >;
+
+export interface RegistroNeveraFormInfo {
+  responsable_manana: string;
+  responsable_tarde: string;
+  responsable_noche: string;
+  fecha_limpieza: string;
+  observaciones: string;
+}
+
+export interface RegistroNeveraCachedState {
+  año: number;
+  mes: number;
+  lecturas: LecturasNevera;
+  lecturasOriginales: LecturasNevera;
+  firmas: Record<JornadaKey, string>;
+  info: RegistroNeveraFormInfo;
+}
 
 // ─── UI Helpers ───────────────────────────────────────────────────────────────
 

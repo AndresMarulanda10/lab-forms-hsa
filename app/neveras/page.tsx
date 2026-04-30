@@ -20,6 +20,11 @@ const empty: Omit<Nevera, "id" | "created_at" | "updated_at"> = {
   codigo: "",
   ubicacion: "",
   activa: true,
+  dispositivo_marca: "",
+  dispositivo_modelo: "",
+  dispositivo_serial: "",
+  certificado: "",
+  factor_correccion: "0",
 };
 
 export default function NeverasPage() {
@@ -105,7 +110,17 @@ export default function NeverasPage() {
   };
 
   const startEdit = (n: Nevera) => {
-    setForm({ nombre: n.nombre, codigo: n.codigo, ubicacion: n.ubicacion, activa: n.activa });
+    setForm({
+      nombre: n.nombre,
+      codigo: n.codigo,
+      ubicacion: n.ubicacion,
+      activa: n.activa,
+      dispositivo_marca: n.dispositivo_marca ?? "",
+      dispositivo_modelo: n.dispositivo_modelo ?? "",
+      dispositivo_serial: n.dispositivo_serial ?? "",
+      certificado: n.certificado ?? "",
+      factor_correccion: n.factor_correccion ?? "0",
+    });
     setEditId(n.id);
     setShowForm(true);
   };
@@ -190,6 +205,60 @@ export default function NeverasPage() {
                 />
               </div>
             </div>
+            <div className="mt-4 border-t border-hsa-green/20 pt-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-hsa-green">
+                Dispositivo de medición
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
+                <div>
+                  <label className="label">Marca</label>
+                  <input
+                    className="input"
+                    value={form.dispositivo_marca}
+                    onChange={(e) => setForm((f) => ({ ...f, dispositivo_marca: e.target.value }))}
+                    placeholder="Ej: Elitech"
+                  />
+                </div>
+                <div>
+                  <label className="label">Modelo</label>
+                  <input
+                    className="input"
+                    value={form.dispositivo_modelo}
+                    onChange={(e) => setForm((f) => ({ ...f, dispositivo_modelo: e.target.value }))}
+                    placeholder="Ej: RC-5"
+                  />
+                </div>
+                <div>
+                  <label className="label">Serial</label>
+                  <input
+                    className="input"
+                    value={form.dispositivo_serial}
+                    onChange={(e) => setForm((f) => ({ ...f, dispositivo_serial: e.target.value }))}
+                    placeholder="Ej: SN-001"
+                  />
+                </div>
+                <div>
+                  <label className="label">Certificado</label>
+                  <input
+                    className="input"
+                    value={form.certificado}
+                    onChange={(e) => setForm((f) => ({ ...f, certificado: e.target.value }))}
+                    placeholder="Ej: CERT-2026"
+                  />
+                </div>
+                <div>
+                  <label className="label">F. corrección</label>
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    value={form.factor_correccion}
+                    onChange={(e) => setForm((f) => ({ ...f, factor_correccion: e.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            </div>
             <div className="flex gap-3 mt-4">
               <button type="submit" className="btn-success" disabled={saving}>
                 {saving ? "Guardando..." : editId ? "Actualizar" : "Crear nevera"}
@@ -227,6 +296,9 @@ export default function NeverasPage() {
                   <th className="text-left py-3 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">
                     Ubicación
                   </th>
+                  <th className="text-left py-3 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">
+                    Dispositivo
+                  </th>
                   <th className="text-center py-3 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                     Estado
                   </th>
@@ -251,6 +323,16 @@ export default function NeverasPage() {
                     </td>
                     <td className="py-3 px-2 text-gray-500 hidden sm:table-cell">
                       {n.ubicacion || "—"}
+                    </td>
+                    <td className="py-3 px-2 text-gray-500 hidden lg:table-cell">
+                      <div className="space-y-0.5">
+                        <p className="font-medium text-gray-700">
+                          {[n.dispositivo_marca, n.dispositivo_modelo].filter(Boolean).join(" ") || "—"}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Serial: {n.dispositivo_serial || "—"} · Cert: {n.certificado || "—"} · F: {n.factor_correccion || "0"}
+                        </p>
+                      </div>
                     </td>
                     <td className="py-3 px-2 text-center">
                       {n.activa ? (

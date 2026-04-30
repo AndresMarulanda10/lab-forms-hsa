@@ -9,13 +9,18 @@ create extension if not exists "uuid-ossp";
 
 -- ─── Neveras ──────────────────────────────────────────────────────────────────
 create table if not exists public.neveras (
-  id          uuid primary key default uuid_generate_v4(),
-  nombre      text not null,
-  codigo      text not null unique,
-  ubicacion   text not null default '',
-  activa      boolean not null default true,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  id                   uuid primary key default uuid_generate_v4(),
+  nombre               text not null,
+  codigo               text not null unique,
+  ubicacion            text not null default '',
+  activa               boolean not null default true,
+  dispositivo_marca    text not null default '',
+  dispositivo_modelo   text not null default '',
+  dispositivo_serial   text not null default '',
+  certificado          text not null default '',
+  factor_correccion    text not null default '0',
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now()
 );
 
 -- ─── Registros Termohigrometría ───────────────────────────────────────────────
@@ -60,7 +65,6 @@ create table if not exists public.registros_neveras (
   firma_manana         text not null default '',
   firma_tarde          text not null default '',
   firma_noche          text not null default '',
-  factor_correccion    text not null default '0',
   fecha_limpieza       date,
   observaciones        text not null default '',
   created_at           timestamptz not null default now(),
@@ -115,16 +119,19 @@ alter table public.registros_termohigrometria
 alter table public.registros_neveras
   add column if not exists firma_manana        text not null default '',
   add column if not exists firma_tarde         text not null default '',
-  add column if not exists firma_noche         text not null default '',
-  add column if not exists factor_correccion   text not null default '0',
+  add column if not exists firma_noche         text not null default '';
+
+-- ─── Migración: dispositivo de neveras en tabla base ─────────────────────────
+alter table public.neveras
   add column if not exists dispositivo_marca   text not null default '',
   add column if not exists dispositivo_modelo  text not null default '',
   add column if not exists dispositivo_serial  text not null default '',
-  add column if not exists certificado         text not null default '';
+  add column if not exists certificado         text not null default '',
+  add column if not exists factor_correccion   text not null default '0';
 
 -- ─── Datos de ejemplo ─────────────────────────────────────────────────────────
-insert into public.neveras (nombre, codigo, ubicacion) values
-  ('Nevera Reactivos A', 'NV-001', 'Laboratorio Clínico'),
-  ('Nevera Muestras B',  'NV-002', 'Laboratorio Clínico'),
-  ('Nevera Medicamentos','NV-003', 'Farmacia')
+insert into public.neveras (nombre, codigo, ubicacion, dispositivo_marca, dispositivo_modelo, dispositivo_serial, certificado, factor_correccion) values
+  ('Nevera Reactivos A', 'NV-001', 'Laboratorio Clínico', '', '', '', '', '0'),
+  ('Nevera Muestras B',  'NV-002', 'Laboratorio Clínico', '', '', '', '', '0'),
+  ('Nevera Medicamentos','NV-003', 'Farmacia', '', '', '', '', '0')
 on conflict (codigo) do nothing;

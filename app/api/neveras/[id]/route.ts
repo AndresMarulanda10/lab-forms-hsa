@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import type { NeveraInsert } from "@/lib/types";
 
 export async function PATCH(
   req: NextRequest,
@@ -7,7 +8,7 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const supabase = await createClient();
-  const body = await req.json();
+  const body: Partial<NeveraInsert> = await req.json();
   const { data, error } = await supabase
     .from("neveras")
     .update(body)

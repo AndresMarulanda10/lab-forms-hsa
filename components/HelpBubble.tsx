@@ -35,8 +35,8 @@ const SLIDES = [
   {
     bg: "bg-amber-500",
     icon: <PenLine size={26} className="text-white"/>,
-    title: "Firmar y agregar lecturas",
-    body: "Selecciona la jornada (Mañana, Tarde o Noche), escribe el día y el valor. Al presionar «Firmar y agregar», se solicita tu firma y el dato se guarda automáticamente. Cada lectura queda trazable con responsable, hora y firma.",
+    title: "Confirmar y agregar lecturas",
+    body: "Selecciona la jornada (Mañana, Tarde o Noche), escribe el día y el valor. Al presionar «Confirmar y agregar», se valida el responsable y el dato se guarda automáticamente. Cada lectura queda trazable con responsable y hora.",
     visual: (
       <div className="flex flex-col items-center gap-2 mt-3">
         <div className="flex items-center gap-2 px-3 py-2 bg-white/20 rounded-xl text-white text-xs font-semibold">
@@ -45,7 +45,7 @@ const SLIDES = [
           <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-[10px] font-bold">🧪 Prueba</span>
         </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 rounded-xl text-white text-[11px] font-semibold">
-          <PenLine size={11}/> Firmar y agregar
+          <PenLine size={11}/> Confirmar y agregar
         </div>
       </div>
     ),
@@ -77,13 +77,13 @@ const SLIDES = [
   {
     bg: "bg-hsa-green",
     icon: <PenLine size={26} className="text-white"/>,
-    title: "Dos niveles de firma",
-    body: "«Firmar y agregar» registra cada lectura individualmente con tu firma. «Guardar mes» cierra el mes con la firma del responsable de jornada y guarda los metadatos del formulario.",
+    title: "Dos niveles de confirmación",
+    body: "«Confirmar y agregar» registra cada lectura individualmente con responsable y hora. «Guardar mes» cierra el mes con el responsable de jornada y guarda los metadatos del formulario.",
     visual: (
       <div className="flex justify-center mt-3 gap-3">
         <div className="flex flex-col items-center gap-1.5 px-3 py-2 bg-white/15 rounded-xl">
           <PenLine size={13} className="text-green-100"/>
-          <span className="text-[9px] text-green-100 font-semibold text-center leading-tight">Firmar y<br/>agregar</span>
+          <span className="text-[9px] text-green-100 font-semibold text-center leading-tight">Confirmar y<br/>agregar</span>
           <span className="text-[8px] text-green-200 text-center">por lectura</span>
         </div>
         <div className="flex flex-col items-center gap-1.5 px-3 py-2 bg-white/15 rounded-xl">

@@ -128,8 +128,8 @@ function buildSlides(modo: "termohigrometria" | "neveras"): Slide[] {
         ? "Registro de Termohigrometría"
         : "Control de Neveras — Cadena de Frío",
       body: modo === "termohigrometria"
-        ? "Esta pantalla reemplaza el formulario físico F-021. Registra temperatura y humedad del ambiente en tres jornadas: Mañana, Tarde y Noche. Cada lectura queda firmada y trazable."
-        : "Esta pantalla reemplaza el formulario F-029. Registra la temperatura de cada nevera en las tres jornadas del día. Cada lectura queda firmada y trazable.",
+        ? "Esta pantalla reemplaza el formulario físico F-021. Registra temperatura y humedad del ambiente en tres jornadas: Mañana, Tarde y Noche. Cada lectura queda trazable por responsable y fecha."
+        : "Esta pantalla reemplaza el formulario F-029. Registra la temperatura de cada nevera en las tres jornadas del día. Cada lectura queda trazable por responsable y fecha.",
       visual: modo === "neveras" ? FRIDGE_DEMO : MONTH_DEMO,
     },
     {
@@ -142,8 +142,8 @@ function buildSlides(modo: "termohigrometria" | "neveras"): Slide[] {
     {
       icon: <PenLine size={28} className="text-white"/>,
       bg: "bg-amber-500",
-      title: "Firmar y agregar lecturas",
-      body: "Selecciona la jornada, escribe el día y el valor. Al presionar «Firmar y agregar» se solicita tu firma y el dato se guarda automáticamente en la base de datos con trazabilidad completa.",
+      title: "Confirmar y agregar lecturas",
+      body: "Selecciona la jornada, escribe el día y el valor. Al presionar «Confirmar y agregar» se valida el responsable y el dato se guarda automáticamente en la base de datos con trazabilidad completa.",
       visual: TABLE_DEMO,
     },
     {
@@ -157,7 +157,7 @@ function buildSlides(modo: "termohigrometria" | "neveras"): Slide[] {
       icon: <Printer size={28} className="text-white"/>,
       bg: "bg-hsa-green",
       title: "Guardar mes e imprimir",
-      body: "Cada lectura se guarda automáticamente al firmarla. «Guardar mes» registra los metadatos del formulario y la firma mensual. Usa Imprimir para generar el PDF institucional del hospital.",
+      body: "Cada lectura se guarda automáticamente al confirmarla. «Guardar mes» registra los metadatos del formulario y el responsable de jornada. Usa Imprimir para generar el PDF institucional del hospital.",
       visual: FIRMA_DEMO,
     },
   ];
