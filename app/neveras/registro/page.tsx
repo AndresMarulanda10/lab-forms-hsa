@@ -57,6 +57,30 @@ const EMPTY_DEVICE_DRAFT: NeveraDeviceDraft = {
 
 const DEVICE_INPUT_CLASS = "w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors";
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+const getApiErrorMessage = async (res: Response, fallback: string) => {
+  try {
+    const body: unknown = await res.json();
+    if (
+      body &&
+      typeof body === "object" &&
+      "error" in body &&
+      typeof body.error === "string" &&
+      body.error.trim()
+    ) {
+      return body.error;
+    }
+  } catch {
+    // Ignore malformed/non-JSON error bodies and use the provided fallback.
+  }
+
+  return fallback;
+};
+
 const getDeviceDraft = (nevera: Nevera | null): NeveraDeviceDraft => ({
   dispositivo: nevera?.dispositivo ?? "",
   dispositivo_marca: nevera?.dispositivo_marca ?? "",
@@ -80,9 +104,11 @@ export default function NeverasRegistroPage() {
   const [mes, setMes]   = useState(now.getMonth() + 1);
   const [neveras,        setNeveras]        = useState<Nevera[]>([]);
   const [selectedNevera, setSelectedNevera] = useState<Nevera | null>(null);
-  const [loading,        setLoading]        = useState(true);
+  const [loadingNeveras, setLoadingNeveras] = useState(true);
+  const [loadingRegistro, setLoadingRegistro] = useState(false);
   const [saving,         setSaving]         = useState(false);
   const [toast,          setToast]          = useState<{ msg: string; type: "ok" | "err" } | null>(null);
+  const [loadError,      setLoadError]      = useState<string | null>(null);
   const [rangoMin, setRangoMin] = useState(2);
   const [rangoMax, setRangoMax] = useState(8);
 
@@ -109,32 +135,62 @@ export default function NeverasRegistroPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // ── Carga ──────────────────────────────────────────────────────────────────
-  const loadNeveras = async () => {
-    try {
-      const res  = await fetch("/api/neveras");
-      const data = await res.json();
-      const arr: Nevera[] = Array.isArray(data) ? data : [];
-      const activas = arr.filter(n => n.activa);
-      setNeveras(activas);
-      if (activas.length > 0) {
-        setSelectedNevera(current => {
-          const next = current ? activas.find(n => n.id === current.id) ?? activas[0] : activas[0];
-          setDeviceDraft(getDeviceDraft(next));
-          return next;
-        });
-      }
-    } catch { setNeveras([]); }
-  };
+  const loading = loadingNeveras || loadingRegistro;
 
-  useEffect(() => { loadNeveras(); }, []);
+  // ── Carga ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const loadNeveras = async () => {
+      setLoadingNeveras(true);
+      setLoadError(null);
+      try {
+        const res  = await fetch("/api/neveras");
+        if (!res.ok) throw new Error(await getApiErrorMessage(res, "No se pudieron cargar las neveras."));
+        const data = await res.json();
+        const arr: Nevera[] = Array.isArray(data) ? data : [];
+        const activas = arr.filter(n => n.activa);
+        setNeveras(activas);
+        if (activas.length > 0) {
+          setSelectedNevera(current => {
+            const next = current ? activas.find(n => n.id === current.id) ?? activas[0] : activas[0];
+            setDeviceDraft(getDeviceDraft(next));
+            return next;
+          });
+        } else {
+          setSelectedNevera(null);
+          setDeviceDraft({ ...EMPTY_DEVICE_DRAFT });
+          setLoadingRegistro(false);
+        }
+      } catch (err: unknown) {
+        const message = getErrorMessage(err, "No se pudieron cargar las neveras.");
+        setNeveras([]);
+        setSelectedNevera(null);
+        setDeviceDraft({ ...EMPTY_DEVICE_DRAFT });
+        setLoadingRegistro(false);
+        setLoadError(message);
+        setToast({ msg: message, type: "err" });
+        setTimeout(() => setToast(null), 3500);
+      } finally {
+        setLoadingNeveras(false);
+      }
+    };
+
+    loadNeveras();
+  }, []);
 
   useEffect(() => {
     selectedNeveraIdRef.current = selectedNevera?.id ?? null;
   }, [selectedNevera?.id]);
 
   useEffect(() => {
-    if (!selectedNevera) return;
+    if (!selectedNevera) {
+      setLecturas({});
+      lecturasOriginales.current = {};
+      setFirmas({ ...EMPTY_FIRMAS });
+      setInfo({ ...EMPTY_INFO });
+      setDeviceDraft({ ...EMPTY_DEVICE_DRAFT });
+      setLoadingRegistro(false);
+      return;
+    }
 
     const cached = cachedStates.current[selectedNevera.id];
     if (cached && cached.año === año && cached.mes === mes) {
@@ -143,38 +199,62 @@ export default function NeverasRegistroPage() {
       setFirmas(cached.firmas);
       setInfo(cached.info);
       setDeviceDraft(getDeviceDraft(selectedNevera));
-      setLoading(false);
+      setLoadError(null);
+      setLoadingRegistro(false);
       return;
     }
 
+    let cancelled = false;
+
     const loadRegistro = async () => {
-      setLoading(true);
-      const res  = await fetch(`/api/neveras-registros?nevera_id=${selectedNevera.id}&año=${año}&mes=${mes}`);
-      const data: RegistroNevera[] = await res.json();
-      if (data.length > 0) {
-        const r = data[0];
-        const lecs = (r.lecturas || {}) as LecturasNevera;
-        const nextInfo: RegistroNeveraFormInfo = {
-          responsable_manana: r.responsable_manana,
-          responsable_tarde: r.responsable_tarde,
-          responsable_noche: r.responsable_noche,
-          fecha_limpieza: r.fecha_limpieza ?? "",
-          observaciones: r.observaciones,
-        };
-        setLecturas(lecs);
-        lecturasOriginales.current = lecs;
-        setFirmas({ manana: r.firma_manana ?? "", tarde: r.firma_tarde ?? "", noche: r.firma_noche ?? "" });
-        setInfo(nextInfo);
-      } else {
+      setLoadingRegistro(true);
+      setLoadError(null);
+      try {
+        const res  = await fetch(`/api/neveras-registros?nevera_id=${selectedNevera.id}&año=${año}&mes=${mes}`);
+        if (!res.ok) throw new Error(await getApiErrorMessage(res, "No se pudo cargar el registro de la nevera."));
+        const data: unknown = await res.json();
+        const registros: RegistroNevera[] = Array.isArray(data) ? data : [];
+        if (cancelled) return;
+
+        if (registros.length > 0) {
+          const r = registros[0];
+          const lecs = (r.lecturas || {}) as LecturasNevera;
+          const nextInfo: RegistroNeveraFormInfo = {
+            responsable_manana: r.responsable_manana,
+            responsable_tarde: r.responsable_tarde,
+            responsable_noche: r.responsable_noche,
+            fecha_limpieza: r.fecha_limpieza ?? "",
+            observaciones: r.observaciones,
+          };
+          setLecturas(lecs);
+          lecturasOriginales.current = lecs;
+          setFirmas({ manana: r.firma_manana ?? "", tarde: r.firma_tarde ?? "", noche: r.firma_noche ?? "" });
+          setInfo(nextInfo);
+        } else {
+          setLecturas({});
+          lecturasOriginales.current = {};
+          setFirmas({ ...EMPTY_FIRMAS });
+          setInfo({ ...EMPTY_INFO });
+        }
+      } catch (err: unknown) {
+        if (cancelled) return;
+        const message = getErrorMessage(err, "No se pudo cargar el registro de la nevera.");
         setLecturas({});
         lecturasOriginales.current = {};
         setFirmas({ ...EMPTY_FIRMAS });
         setInfo({ ...EMPTY_INFO });
+        setLoadError(message);
+        showToast(message, "err");
+      } finally {
+        if (!cancelled) setLoadingRegistro(false);
       }
-      setLoading(false);
     };
 
     loadRegistro();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedNevera, año, mes]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -215,7 +295,7 @@ export default function NeverasRegistroPage() {
       lecturasOriginales.current = cached.lecturasOriginales;
       setFirmas(cached.firmas);
       setInfo(cached.info);
-      setLoading(false);
+      setLoadingRegistro(false);
     }
   };
 
@@ -455,7 +535,9 @@ export default function NeverasRegistroPage() {
         nombreDocumento="FORMATO PARA REGISTRO DE TEMPERATURA DE LA CADENA DE FRÍO" />
       <div className="card text-center py-12">
         <Refrigerator size={44} className="text-gray-200 mx-auto mb-3"/>
-        <p className="text-gray-500 mb-4">No hay neveras activas.</p>
+        <p className="text-gray-500 mb-4">
+          {loadError ?? "No hay neveras activas."}
+        </p>
         <Link href="/neveras" className="btn-success"><Plus size={15}/> Crear nevera</Link>
       </div>
       <HospitalFooter />
@@ -475,6 +557,13 @@ export default function NeverasRegistroPage() {
       {/* ═══ ENCABEZADO ══════════════════════════════════════════════════════ */}
       <HospitalHeader codigo="M-GADT-LAB-F-029" version="2"
         nombreDocumento="FORMATO PARA REGISTRO DE TEMPERATURA DE LA CADENA DE FRÍO" />
+
+      {loadError && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 no-print">
+          <AlertCircle size={16} />
+          {loadError}
+        </div>
+      )}
 
       {/* ─── Metadatos ───────────────────────────────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs no-print">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft, ChevronRight, Printer, Loader2,
   CheckCircle, AlertCircle, PenLine,
@@ -21,6 +21,151 @@ type J = "M" | "T" | "N";
 const J_COLOR: Record<J, string> = { M: "#006b3c", T: "#d97706", N: "#4338ca" };
 const J_LABEL: Record<J, string> = { M: "Mañana", T: "Tarde", N: "Noche" };
 const JORNADAS: J[] = ["M", "T", "N"];
+
+interface TermohigrometriaInfo {
+  ubicacion: string;
+  dispositivo_nombre: string;
+  dispositivo_marca: string;
+  dispositivo_modelo: string;
+  dispositivo_serial: string;
+  certificado: string;
+  factor_correccion_temp: string;
+  factor_correccion_hum: string;
+  responsable_manana: string;
+  responsable_tarde: string;
+  responsable_noche: string;
+  observaciones: string;
+}
+
+interface TermohigrometriaFirmas {
+  manana: string;
+  tarde: string;
+  noche: string;
+}
+
+interface TermohigrometriaDraft {
+  info: TermohigrometriaInfo;
+  firmas: TermohigrometriaFirmas;
+  lecturas: LecturasTermohigrometria;
+  lecturasOriginales: LecturasTermohigrometria;
+  jornadaAdd: J;
+  inputDia: string;
+  inputTemp: string;
+  inputHum: string;
+  tempMin: number;
+  tempMax: number;
+  humMin: number;
+  humMax: number;
+}
+
+const EMPTY_FIRMAS: TermohigrometriaFirmas = { manana: "", tarde: "", noche: "" };
+
+const EMPTY_INFO: TermohigrometriaInfo = {
+  ubicacion: "",
+  dispositivo_nombre: "TERMOHIGROMETRO",
+  dispositivo_marca: "",
+  dispositivo_modelo: "",
+  dispositivo_serial: "",
+  certificado: "",
+  factor_correccion_temp: "0",
+  factor_correccion_hum: "0",
+  responsable_manana: "",
+  responsable_tarde: "",
+  responsable_noche: "",
+  observaciones: "",
+};
+
+const buildDraftKey = (año: number, mes: number) =>
+  `lab-forms-hsa:termohigrometria:draft:${año}-${String(mes).padStart(2, "0")}`;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const isJornada = (value: unknown): value is J =>
+  value === "M" || value === "T" || value === "N";
+
+const readText = (source: Record<string, unknown>, key: keyof TermohigrometriaInfo, fallback = "") => {
+  const value = source[key];
+  return typeof value === "string" ? value : fallback;
+};
+
+const readNumber = (source: Record<string, unknown>, key: string, fallback: number) => {
+  const value = source[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+};
+
+const normalizeInfo = (value: unknown): TermohigrometriaInfo => {
+  const source = isRecord(value) ? value : {};
+  return {
+    ubicacion: readText(source, "ubicacion"),
+    dispositivo_nombre: readText(source, "dispositivo_nombre", "TERMOHIGROMETRO"),
+    dispositivo_marca: readText(source, "dispositivo_marca"),
+    dispositivo_modelo: readText(source, "dispositivo_modelo"),
+    dispositivo_serial: readText(source, "dispositivo_serial"),
+    certificado: readText(source, "certificado"),
+    factor_correccion_temp: readText(source, "factor_correccion_temp", "0"),
+    factor_correccion_hum: readText(source, "factor_correccion_hum", "0"),
+    responsable_manana: readText(source, "responsable_manana"),
+    responsable_tarde: readText(source, "responsable_tarde"),
+    responsable_noche: readText(source, "responsable_noche"),
+    observaciones: readText(source, "observaciones"),
+  };
+};
+
+const normalizeFirmas = (value: unknown): TermohigrometriaFirmas => {
+  const source = isRecord(value) ? value : {};
+  return {
+    manana: typeof source.manana === "string" ? source.manana : "",
+    tarde: typeof source.tarde === "string" ? source.tarde : "",
+    noche: typeof source.noche === "string" ? source.noche : "",
+  };
+};
+
+const normalizeLecturas = (value: unknown): LecturasTermohigrometria =>
+  isRecord(value) ? (value as LecturasTermohigrometria) : {};
+
+const readTermohigrometriaDraft = (año: number, mes: number): TermohigrometriaDraft | null => {
+  try {
+    const raw = window.sessionStorage.getItem(buildDraftKey(año, mes));
+    if (!raw) return null;
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return null;
+
+    return {
+      info: normalizeInfo(parsed.info),
+      firmas: normalizeFirmas(parsed.firmas),
+      lecturas: normalizeLecturas(parsed.lecturas),
+      lecturasOriginales: normalizeLecturas(parsed.lecturasOriginales),
+      jornadaAdd: isJornada(parsed.jornadaAdd) ? parsed.jornadaAdd : "M",
+      inputDia: typeof parsed.inputDia === "string" ? parsed.inputDia : "1",
+      inputTemp: typeof parsed.inputTemp === "string" ? parsed.inputTemp : "",
+      inputHum: typeof parsed.inputHum === "string" ? parsed.inputHum : "",
+      tempMin: readNumber(parsed, "tempMin", 15),
+      tempMax: readNumber(parsed, "tempMax", 30),
+      humMin: readNumber(parsed, "humMin", 40),
+      humMax: readNumber(parsed, "humMax", 70),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeTermohigrometriaDraft = (año: number, mes: number, draft: TermohigrometriaDraft) => {
+  try {
+    window.sessionStorage.setItem(buildDraftKey(año, mes), JSON.stringify(draft));
+  } catch {
+    // sessionStorage puede no estar disponible; en ese caso dejamos que la DB sea la fuente.
+  }
+};
+
+const clearTermohigrometriaDraft = (año: number, mes: number) => {
+  try {
+    window.sessionStorage.removeItem(buildDraftKey(año, mes));
+  } catch {
+    // No-op: limpiar borrador es una mejora, no debe romper el guardado.
+  }
+};
 
 // Mappers entre J y JornadaKey
 const toJornadaKey = (j: J): JornadaKey =>
@@ -44,15 +189,8 @@ export default function TermohigrometriaPage() {
 
   const [lecturas, setLecturas] = useState<LecturasTermohigrometria>({});
   const lecturasOriginales = useRef<LecturasTermohigrometria>({});
-  const [info, setInfo] = useState({
-    ubicacion: "", dispositivo_nombre: "TERMOHIGROMETRO",
-    dispositivo_marca: "", dispositivo_modelo: "",
-    dispositivo_serial: "", certificado: "",
-    factor_correccion_temp: "0",
-    factor_correccion_hum: "0",
-    responsable_manana: "", responsable_tarde: "", responsable_noche: "",
-    observaciones: "",
-  });
+  const draftHydrated = useRef(false);
+  const [info, setInfo] = useState<TermohigrometriaInfo>({ ...EMPTY_INFO });
 
   // ── Ingreso ────────────────────────────────────────────────────────────────
   const [jornadaAdd, setJornadaAdd] = useState<J>("M");
@@ -66,45 +204,83 @@ export default function TermohigrometriaPage() {
   };
 
   // ── Carga ──────────────────────────────────────────────────────────────────
-  const load = useCallback(async () => {
-    setLoading(true);
-    const res  = await fetch(`/api/termohigrometria?año=${año}&mes=${mes}`);
-    const data: RegistroTermohigrometria[] = await res.json();
-    if (data.length > 0) {
-      const r = data[0];
-      setInfo({
-        ubicacion: r.ubicacion, dispositivo_nombre: r.dispositivo_nombre,
-        dispositivo_marca: r.dispositivo_marca, dispositivo_modelo: r.dispositivo_modelo,
-        dispositivo_serial: r.dispositivo_serial, certificado: r.certificado,
-        factor_correccion_temp: r.factor_correccion_temp ?? r.factor_correccion ?? "0",
-        factor_correccion_hum:  r.factor_correccion_hum  ?? "0",
-        responsable_manana: r.responsable_manana ?? "",
-        responsable_tarde:  r.responsable_tarde  ?? "",
-        responsable_noche:  r.responsable_noche  ?? "",
-        observaciones: r.observaciones,
-      });
-      setFirmas({ manana: r.firma_manana ?? "", tarde: r.firma_tarde ?? "", noche: r.firma_noche ?? "" });
-      const lecs = (r.lecturas || {}) as LecturasTermohigrometria;
-      setLecturas(lecs);
-      lecturasOriginales.current = lecs;
-    } else {
-      setInfo({
-        ubicacion: "", dispositivo_nombre: "TERMOHIGROMETRO",
-        dispositivo_marca: "", dispositivo_modelo: "",
-        dispositivo_serial: "", certificado: "",
-        factor_correccion_temp: "0",
-        factor_correccion_hum: "0",
-        responsable_manana: "", responsable_tarde: "", responsable_noche: "",
-        observaciones: "",
-      });
-      setFirmas({ manana: "", tarde: "", noche: "" });
-      setLecturas({});
-      lecturasOriginales.current = {};
-    }
-    setLoading(false);
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      draftHydrated.current = false;
+      setLoading(true);
+      const res  = await fetch(`/api/termohigrometria?año=${año}&mes=${mes}`);
+      const data: RegistroTermohigrometria[] = await res.json();
+      if (!active) return;
+
+      if (data.length > 0) {
+        const r = data[0];
+        setInfo({
+          ubicacion: r.ubicacion, dispositivo_nombre: r.dispositivo_nombre,
+          dispositivo_marca: r.dispositivo_marca, dispositivo_modelo: r.dispositivo_modelo,
+          dispositivo_serial: r.dispositivo_serial, certificado: r.certificado,
+          factor_correccion_temp: r.factor_correccion_temp ?? r.factor_correccion ?? "0",
+          factor_correccion_hum:  r.factor_correccion_hum  ?? "0",
+          responsable_manana: r.responsable_manana ?? "",
+          responsable_tarde:  r.responsable_tarde  ?? "",
+          responsable_noche:  r.responsable_noche  ?? "",
+          observaciones: r.observaciones,
+        });
+        setFirmas({ manana: r.firma_manana ?? "", tarde: r.firma_tarde ?? "", noche: r.firma_noche ?? "" });
+        const lecs = (r.lecturas || {}) as LecturasTermohigrometria;
+        setLecturas(lecs);
+        lecturasOriginales.current = lecs;
+      } else {
+        setInfo({ ...EMPTY_INFO });
+        setFirmas({ ...EMPTY_FIRMAS });
+        setLecturas({});
+        lecturasOriginales.current = {};
+      }
+
+      const draft = readTermohigrometriaDraft(año, mes);
+      if (draft) {
+        setInfo(draft.info);
+        setFirmas(draft.firmas);
+        setLecturas(draft.lecturas);
+        lecturasOriginales.current = draft.lecturasOriginales;
+        setJornadaAdd(draft.jornadaAdd);
+        setInputDia(draft.inputDia);
+        setInputTemp(draft.inputTemp);
+        setInputHum(draft.inputHum);
+        setTempMin(draft.tempMin);
+        setTempMax(draft.tempMax);
+        setHumMin(draft.humMin);
+        setHumMax(draft.humMax);
+      }
+
+      draftHydrated.current = true;
+      setLoading(false);
+    };
+
+    load();
+
+    return () => { active = false; };
   }, [año, mes]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (loading || !draftHydrated.current) return;
+
+    writeTermohigrometriaDraft(año, mes, {
+      info,
+      firmas,
+      lecturas,
+      lecturasOriginales: lecturasOriginales.current,
+      jornadaAdd,
+      inputDia,
+      inputTemp,
+      inputHum,
+      tempMin,
+      tempMax,
+      humMin,
+      humMax,
+    });
+  }, [año, mes, loading, info, firmas, lecturas, jornadaAdd, inputDia, inputTemp, inputHum, tempMin, tempMax, humMin, humMax]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const responsableDeJornada = (j: J) =>
@@ -193,6 +369,7 @@ export default function TermohigrometriaPage() {
       body: JSON.stringify(buildSaveBody(nuevasLecturas, firmas, resp || "—", firma)),
     });
     if (!res.ok) throw new Error((await res.json()).error);
+    clearTermohigrometriaDraft(año, mes);
 
     // Limpiar inputs y avanzar día
     const max = getDiasEnMes(mes, año);
@@ -240,11 +417,13 @@ export default function TermohigrometriaPage() {
     });
     setSaving(false);
     if (!res.ok) throw new Error((await res.json()).error);
+    clearTermohigrometriaDraft(año, mes);
     showToast("Registro guardado ✓");
   };
 
   // ── Navegación de mes ──────────────────────────────────────────────────────
   const navMes = (d: number) => {
+    setLoading(true);
     let m = mes + d, a = año;
     if (m > 12) { m = 1; a++; }
     if (m < 1)  { m = 12; a--; }
