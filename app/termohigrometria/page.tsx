@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import {
   ChevronLeft, ChevronRight, Printer, Loader2,
   CheckCircle, AlertCircle, PenLine,
@@ -78,6 +79,30 @@ const EMPTY_INFO: TermohigrometriaInfo = {
 const buildDraftKey = (año: number, mes: number) =>
   `lab-forms-hsa:termohigrometria:draft:${año}-${String(mes).padStart(2, "0")}`;
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
+const getApiErrorMessage = async (res: Response, fallback: string) => {
+  try {
+    const body: unknown = await res.json();
+    if (
+      body &&
+      typeof body === "object" &&
+      "error" in body &&
+      typeof body.error === "string" &&
+      body.error.trim()
+    ) {
+      return body.error;
+    }
+  } catch {
+    // Ignore malformed/non-JSON error bodies and use the provided fallback.
+  }
+
+  return fallback;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
@@ -122,11 +147,52 @@ const normalizeFirmas = (value: unknown): TermohigrometriaFirmas => {
 };
 
 const normalizeLecturas = (value: unknown): LecturasTermohigrometria =>
-  isRecord(value) ? (value as LecturasTermohigrometria) : {};
+  isRecord(value) ? { ...(value as LecturasTermohigrometria) } : {};
+
+const applyRegistro = (
+  registro: RegistroTermohigrometria | null,
+  setInfo: Dispatch<SetStateAction<TermohigrometriaInfo>>,
+  setFirmas: Dispatch<SetStateAction<TermohigrometriaFirmas>>,
+  setLecturas: Dispatch<SetStateAction<LecturasTermohigrometria>>,
+  lecturasOriginales: MutableRefObject<LecturasTermohigrometria>,
+) => {
+  if (!registro) {
+    setInfo({ ...EMPTY_INFO });
+    setFirmas({ ...EMPTY_FIRMAS });
+    setLecturas({});
+    lecturasOriginales.current = {};
+    return;
+  }
+
+  const lecturasHydrated = normalizeLecturas(registro.lecturas);
+
+  setInfo({
+    ubicacion: registro.ubicacion,
+    dispositivo_nombre: registro.dispositivo_nombre,
+    dispositivo_marca: registro.dispositivo_marca,
+    dispositivo_modelo: registro.dispositivo_modelo,
+    dispositivo_serial: registro.dispositivo_serial,
+    certificado: registro.certificado,
+    factor_correccion_temp: registro.factor_correccion_temp ?? registro.factor_correccion ?? "0",
+    factor_correccion_hum: registro.factor_correccion_hum ?? "0",
+    responsable_manana: registro.responsable_manana ?? "",
+    responsable_tarde: registro.responsable_tarde ?? "",
+    responsable_noche: registro.responsable_noche ?? "",
+    observaciones: registro.observaciones,
+  });
+  setFirmas({
+    manana: registro.firma_manana ?? "",
+    tarde: registro.firma_tarde ?? "",
+    noche: registro.firma_noche ?? "",
+  });
+  setLecturas(lecturasHydrated);
+  lecturasOriginales.current = lecturasHydrated;
+};
 
 const readTermohigrometriaDraft = (año: number, mes: number): TermohigrometriaDraft | null => {
   try {
-    const raw = window.sessionStorage.getItem(buildDraftKey(año, mes));
+    const key = buildDraftKey(año, mes);
+    const raw = window.localStorage.getItem(key) ?? window.sessionStorage.getItem(key);
     if (!raw) return null;
 
     const parsed: unknown = JSON.parse(raw);
@@ -153,15 +219,17 @@ const readTermohigrometriaDraft = (año: number, mes: number): TermohigrometriaD
 
 const writeTermohigrometriaDraft = (año: number, mes: number, draft: TermohigrometriaDraft) => {
   try {
-    window.sessionStorage.setItem(buildDraftKey(año, mes), JSON.stringify(draft));
+    window.localStorage.setItem(buildDraftKey(año, mes), JSON.stringify(draft));
   } catch {
-    // sessionStorage puede no estar disponible; en ese caso dejamos que la DB sea la fuente.
+    // localStorage puede no estar disponible; en ese caso dejamos que la DB sea la fuente.
   }
 };
 
 const clearTermohigrometriaDraft = (año: number, mes: number) => {
   try {
-    window.sessionStorage.removeItem(buildDraftKey(año, mes));
+    const key = buildDraftKey(año, mes);
+    window.localStorage.removeItem(key);
+    window.sessionStorage.removeItem(key);
   } catch {
     // No-op: limpiar borrador es una mejora, no debe romper el guardado.
   }
@@ -177,6 +245,7 @@ export default function TermohigrometriaPage() {
   const [mes,  setMes]  = useState(now.getMonth() + 1);
   const [loading,      setLoading]      = useState(true);
   const [saving,       setSaving]       = useState(false);
+  const [loadError,    setLoadError]    = useState<string | null>(null);
   const [firmaModal,   setFirmaModal]   = useState(false);
   const [firmaModalAdd, setFirmaModalAdd] = useState(false);
   const [pendingAdd,   setPendingAdd]   = useState<{ dia: number; temp: number; hum: number | null } | null>(null);
@@ -210,48 +279,59 @@ export default function TermohigrometriaPage() {
     const load = async () => {
       draftHydrated.current = false;
       setLoading(true);
-      const res  = await fetch(`/api/termohigrometria?año=${año}&mes=${mes}`);
-      const data: RegistroTermohigrometria[] = await res.json();
-      if (!active) return;
+      setLoadError(null);
 
-      if (data.length > 0) {
-        const r = data[0];
-        setInfo({
-          ubicacion: r.ubicacion, dispositivo_nombre: r.dispositivo_nombre,
-          dispositivo_marca: r.dispositivo_marca, dispositivo_modelo: r.dispositivo_modelo,
-          dispositivo_serial: r.dispositivo_serial, certificado: r.certificado,
-          factor_correccion_temp: r.factor_correccion_temp ?? r.factor_correccion ?? "0",
-          factor_correccion_hum:  r.factor_correccion_hum  ?? "0",
-          responsable_manana: r.responsable_manana ?? "",
-          responsable_tarde:  r.responsable_tarde  ?? "",
-          responsable_noche:  r.responsable_noche  ?? "",
-          observaciones: r.observaciones,
-        });
-        setFirmas({ manana: r.firma_manana ?? "", tarde: r.firma_tarde ?? "", noche: r.firma_noche ?? "" });
-        const lecs = (r.lecturas || {}) as LecturasTermohigrometria;
-        setLecturas(lecs);
-        lecturasOriginales.current = lecs;
-      } else {
-        setInfo({ ...EMPTY_INFO });
-        setFirmas({ ...EMPTY_FIRMAS });
-        setLecturas({});
-        lecturasOriginales.current = {};
-      }
+      try {
+        const res  = await fetch(`/api/termohigrometria?año=${año}&mes=${mes}`);
+        if (!res.ok) {
+          throw new Error(await getApiErrorMessage(res, "No se pudo cargar el registro de termohigrometría."));
+        }
 
-      const draft = readTermohigrometriaDraft(año, mes);
-      if (draft) {
-        setInfo(draft.info);
-        setFirmas(draft.firmas);
-        setLecturas(draft.lecturas);
-        lecturasOriginales.current = draft.lecturasOriginales;
-        setJornadaAdd(draft.jornadaAdd);
-        setInputDia(draft.inputDia);
-        setInputTemp(draft.inputTemp);
-        setInputHum(draft.inputHum);
-        setTempMin(draft.tempMin);
-        setTempMax(draft.tempMax);
-        setHumMin(draft.humMin);
-        setHumMax(draft.humMax);
+        const data: unknown = await res.json();
+        const registros = Array.isArray(data) ? data as RegistroTermohigrometria[] : [];
+        if (!active) return;
+
+        applyRegistro(registros[0] ?? null, setInfo, setFirmas, setLecturas, lecturasOriginales);
+
+        const draft = readTermohigrometriaDraft(año, mes);
+        if (draft) {
+          setInfo(draft.info);
+          setFirmas(draft.firmas);
+          setLecturas(normalizeLecturas(draft.lecturas));
+          lecturasOriginales.current = normalizeLecturas(draft.lecturasOriginales);
+          setJornadaAdd(draft.jornadaAdd);
+          setInputDia(draft.inputDia);
+          setInputTemp(draft.inputTemp);
+          setInputHum(draft.inputHum);
+          setTempMin(draft.tempMin);
+          setTempMax(draft.tempMax);
+          setHumMin(draft.humMin);
+          setHumMax(draft.humMax);
+        }
+      } catch (error: unknown) {
+        if (!active) return;
+        const message = getErrorMessage(error, "No se pudo cargar el registro de termohigrometría.");
+        const draft = readTermohigrometriaDraft(año, mes);
+
+        if (draft) {
+          setInfo(draft.info);
+          setFirmas(draft.firmas);
+          setLecturas(normalizeLecturas(draft.lecturas));
+          lecturasOriginales.current = normalizeLecturas(draft.lecturasOriginales);
+          setJornadaAdd(draft.jornadaAdd);
+          setInputDia(draft.inputDia);
+          setInputTemp(draft.inputTemp);
+          setInputHum(draft.inputHum);
+          setTempMin(draft.tempMin);
+          setTempMax(draft.tempMax);
+          setHumMin(draft.humMin);
+          setHumMax(draft.humMax);
+        } else {
+          applyRegistro(null, setInfo, setFirmas, setLecturas, lecturasOriginales);
+        }
+
+        setLoadError(message);
+        showToast(message, "err");
       }
 
       draftHydrated.current = true;
@@ -463,6 +543,13 @@ export default function TermohigrometriaPage() {
         codigo="M-GAD-LAB-F-021" version="2"
         nombreDocumento="FORMATO PARA REGISTRO DE CONDICIONES AMBIENTALES DE ALMACENAMIENTO (T°C Y HUMEDAD)"
       />
+
+      {loadError && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 no-print">
+          <AlertCircle size={16} />
+          {loadError}
+        </div>
+      )}
 
       {/* ─── Metadatos ───────────────────────────────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs no-print">
