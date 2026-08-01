@@ -10,6 +10,7 @@ import HospitalFooter from "@/components/HospitalFooter";
 import RegistroChart from "@/components/RegistroChart";
 import FirmaGuardadoModal from "@/components/FirmaGuardadoModal";
 import TermoPrintTemplate from "@/components/TermoPrintTemplate";
+import PrintableSheet from "@/components/PrintableSheet";
 import type {
   LecturasTermohigrometria, LecturaDiaTermohigro,
   RegistroTermohigrometria, JornadaKey,
@@ -162,7 +163,7 @@ export default function TermohigrometriaPage({ searchParams }: TermohigrometriaP
   const serverUpdatedAt = useRef<string | null>(null);
   const legacyAudit = useRef({ responsable: "", firma: "" });
   const [info, setInfo] = useState<TermohigrometriaInfo>({ ...EMPTY_INFO });
-  const printTemplateRef = useRef<HTMLDivElement>(null);
+  const printableSheetRef = useRef<HTMLDivElement>(null);
   const pdfExportInProgress = useRef(false);
   const configSaveInProgress = useRef(false);
   const persistenceInProgress = useRef(false);
@@ -631,7 +632,7 @@ export default function TermohigrometriaPage({ searchParams }: TermohigrometriaP
   };
 
   const handleDownloadPdf = async () => {
-    if (pdfExportInProgress.current || !printTemplateRef.current) return;
+    if (pdfExportInProgress.current || !printableSheetRef.current) return;
 
     pdfExportInProgress.current = true;
     setExportingPdf(true);
@@ -642,7 +643,7 @@ export default function TermohigrometriaPage({ searchParams }: TermohigrometriaP
         `${año}-${String(mes).padStart(2, "0")}`,
         info.dispositivo_nombre,
       ]);
-      await downloadElementAsPdf(printTemplateRef.current, filename);
+      await downloadElementAsPdf(printableSheetRef.current, filename);
       showToast("PDF descargado ✓");
     } catch (error: unknown) {
       showToast(getErrorMessage(error, "No se pudo generar el PDF."), "err");
@@ -721,10 +722,12 @@ export default function TermohigrometriaPage({ searchParams }: TermohigrometriaP
       )}
 
       {/* ═══ ENCABEZADO ══════════════════════════════════════════════════════ */}
-      <HospitalHeader
-        codigo="M-GAD-LAB-F-021" version="2"
-        nombreDocumento="FORMATO PARA REGISTRO DE CONDICIONES AMBIENTALES DE ALMACENAMIENTO (T°C Y HUMEDAD)"
-      />
+      <div className="no-print">
+        <HospitalHeader
+          codigo="M-GAD-LAB-F-021" version="2"
+          nombreDocumento="FORMATO PARA REGISTRO DE CONDICIONES AMBIENTALES DE ALMACENAMIENTO (T°C Y HUMEDAD)"
+        />
+      </div>
 
       {loadError && (
         <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 no-print">
@@ -997,7 +1000,15 @@ export default function TermohigrometriaPage({ searchParams }: TermohigrometriaP
         </div>
       )}
 
-      <div ref={printTemplateRef} className="print-only">
+      <PrintableSheet
+        ref={printableSheetRef}
+        header={(
+          <HospitalHeader
+            codigo="M-GAD-LAB-F-021" version="2"
+            nombreDocumento="FORMATO PARA REGISTRO DE CONDICIONES AMBIENTALES DE ALMACENAMIENTO (T°C Y HUMEDAD)"
+          />
+        )}
+      >
         <TermoPrintTemplate
           lecturas={lecturas}
           mes={mes}
@@ -1009,9 +1020,11 @@ export default function TermohigrometriaPage({ searchParams }: TermohigrometriaP
           humMin={humMin}
           humMax={humMax}
         />
-      </div>
+      </PrintableSheet>
 
-      <HospitalFooter/>
+      <div className="no-print">
+        <HospitalFooter/>
+      </div>
 
       <div className="no-print">
         {/* ── Modal de confirmación por entrada ─────────────────────────────── */}

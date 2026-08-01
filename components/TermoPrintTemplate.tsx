@@ -122,7 +122,7 @@ export default function TermoPrintTemplate({
         factorCorreccion={fcTemp}
         data={tempData}
         width={720}
-        height={220}
+        height={190}
       />
 
       <p className="mb-0 text-[7px] text-gray-600">
@@ -136,7 +136,7 @@ export default function TermoPrintTemplate({
         factorCorreccion={fcHum}
         data={humData}
         width={720}
-        height={220}
+        height={190}
       />
 
       <section className="break-inside-avoid text-[7px]">
