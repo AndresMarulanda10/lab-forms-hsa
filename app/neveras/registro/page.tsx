@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  ChevronLeft, ChevronRight, Printer, Loader2,
+  ChevronLeft, ChevronRight, FileDown, Printer, Loader2,
   CheckCircle, AlertCircle, Refrigerator, Plus, PenLine, Save,
 } from "lucide-react";
 import Link from "next/link";
@@ -20,6 +20,7 @@ import {
   MESES, getDiasEnMes, lecturaClave,
   valorDeLectura, esLecturaAuditada,
 } from "@/lib/types";
+import { buildPdfFilename, downloadElementAsPdf } from "@/lib/exportPdf";
 
 type NeveraDeviceField =
   | "dispositivo"
@@ -107,6 +108,7 @@ export default function NeverasRegistroPage() {
   const [loadingNeveras, setLoadingNeveras] = useState(true);
   const [loadingRegistro, setLoadingRegistro] = useState(false);
   const [saving,         setSaving]         = useState(false);
+  const [exportingPdf,   setExportingPdf]   = useState(false);
   const [toast,          setToast]          = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const [loadError,      setLoadError]      = useState<string | null>(null);
   const [rangoMin, setRangoMin] = useState(2);
@@ -119,6 +121,8 @@ export default function NeverasRegistroPage() {
   const [firmas, setFirmas] = useState<Record<JornadaKey, string>>({ ...EMPTY_FIRMAS });
   const [info, setInfo] = useState<RegistroNeveraFormInfo>({ ...EMPTY_INFO });
   const [deviceDraft, setDeviceDraft] = useState<NeveraDeviceDraft>({ ...EMPTY_DEVICE_DRAFT });
+  const printTemplateRef = useRef<HTMLDivElement>(null);
+  const pdfExportInProgress = useRef(false);
 
   // ── Ingreso por lectura ────────────────────────────────────────────────────
   const [jornadaAdd,    setJornadaAdd]    = useState<Jornada>("M");
@@ -486,10 +490,30 @@ export default function NeverasRegistroPage() {
       });
       if (!res.ok) throw new Error((await res.json()).error);
       showToast("Registro mensual guardado ✓");
-
-      requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (pdfExportInProgress.current || !printTemplateRef.current) return;
+
+    pdfExportInProgress.current = true;
+    setExportingPdf(true);
+
+    try {
+      const filename = buildPdfFilename([
+        "registro-nevera",
+        `${año}-${String(mes).padStart(2, "0")}`,
+        selectedNevera?.nombre ?? selectedNevera?.id,
+      ]);
+      await downloadElementAsPdf(printTemplateRef.current, filename);
+      showToast("PDF descargado ✓");
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, "No se pudo generar el PDF."), "err");
+    } finally {
+      pdfExportInProgress.current = false;
+      setExportingPdf(false);
     }
   };
 
@@ -642,9 +666,17 @@ export default function NeverasRegistroPage() {
               className="flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-[11px] font-semibold hover:bg-amber-200 transition-colors">
               🧪 Prueba
             </button>
+            <button onClick={handleDownloadPdf} disabled={exportingPdf || loading || !selectedNevera}
+              className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50">
+              {exportingPdf ? <Loader2 size={11} className="animate-spin"/> : <FileDown size={11}/>}
+              {exportingPdf ? "Generando…" : "Guardar PDF"}
+            </button>
             {/* Guardar mensual: responsables + confirmación mensual */}
             <button onClick={pedirFirmaMensual} disabled={saving || loading}
-              className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50">
+              className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
+              style={{ backgroundColor: "#006b3c" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#004d2a"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#006b3c"; }}>
               {saving ? <Loader2 size={11} className="animate-spin"/> : <Save size={11}/>}
               {saving ? "Guardando…" : "Guardar mes"}
             </button>
@@ -784,17 +816,18 @@ export default function NeverasRegistroPage() {
         </div>
       </div>
 
-      <NeveraPrintTemplate
-        className="print-only"
-        lecturas={lecturas}
-        mes={mes}
-        año={año}
-        neveraNombre={selectedNevera?.nombre ?? ""}
-        info={printInfo}
-        firmas={firmas}
-        rangoMin={rangoMin}
-        rangoMax={rangoMax}
-      />
+      <div ref={printTemplateRef} className="print-only">
+        <NeveraPrintTemplate
+          lecturas={lecturas}
+          mes={mes}
+          año={año}
+          neveraNombre={selectedNevera?.nombre ?? ""}
+          info={printInfo}
+          firmas={firmas}
+          rangoMin={rangoMin}
+          rangoMax={rangoMax}
+        />
+      </div>
 
       <HospitalFooter />
 
