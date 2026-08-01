@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import {
-  ChevronLeft, ChevronRight, Printer, Loader2,
+  ChevronLeft, ChevronRight, FileDown, Printer, Loader2,
   CheckCircle, AlertCircle, PenLine,
 } from "lucide-react";
 import HospitalHeader from "@/components/HospitalHeader";
@@ -16,6 +16,7 @@ import type {
   RegistroTermohigrometria, JornadaKey,
 } from "@/lib/types";
 import { MESES, getDiasEnMes, enriquecerLecturasTermohigro } from "@/lib/types";
+import { buildPdfFilename, downloadElementAsPdf } from "@/lib/exportPdf";
 
 // ─── Colores y etiquetas de jornada ──────────────────────────────────────────
 type J = "M" | "T" | "N";
@@ -245,6 +246,7 @@ export default function TermohigrometriaPage() {
   const [mes,  setMes]  = useState(now.getMonth() + 1);
   const [loading,      setLoading]      = useState(true);
   const [saving,       setSaving]       = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [loadError,    setLoadError]    = useState<string | null>(null);
   const [firmaModal,   setFirmaModal]   = useState(false);
   const [firmaModalAdd, setFirmaModalAdd] = useState(false);
@@ -260,6 +262,8 @@ export default function TermohigrometriaPage() {
   const lecturasOriginales = useRef<LecturasTermohigrometria>({});
   const draftHydrated = useRef(false);
   const [info, setInfo] = useState<TermohigrometriaInfo>({ ...EMPTY_INFO });
+  const printTemplateRef = useRef<HTMLDivElement>(null);
+  const pdfExportInProgress = useRef(false);
 
   // ── Ingreso ────────────────────────────────────────────────────────────────
   const [jornadaAdd, setJornadaAdd] = useState<J>("M");
@@ -498,10 +502,30 @@ export default function TermohigrometriaPage() {
       if (!res.ok) throw new Error((await res.json()).error);
       clearTermohigrometriaDraft(año, mes);
       showToast("Registro guardado ✓");
-
-      requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (pdfExportInProgress.current || !printTemplateRef.current) return;
+
+    pdfExportInProgress.current = true;
+    setExportingPdf(true);
+
+    try {
+      const filename = buildPdfFilename([
+        "termohigrometria",
+        `${año}-${String(mes).padStart(2, "0")}`,
+        info.dispositivo_nombre,
+      ]);
+      await downloadElementAsPdf(printTemplateRef.current, filename);
+      showToast("PDF descargado ✓");
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, "No se pudo generar el PDF."), "err");
+    } finally {
+      pdfExportInProgress.current = false;
+      setExportingPdf(false);
     }
   };
 
@@ -640,8 +664,16 @@ export default function TermohigrometriaPage() {
               className="flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-[11px] font-semibold hover:bg-amber-200 transition-colors">
               🧪 Prueba
             </button>
-            <button onClick={pedirFirmaMensual} disabled={saving || loading}
+            <button onClick={handleDownloadPdf} disabled={exportingPdf || loading}
               className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50">
+              {exportingPdf ? <Loader2 size={11} className="animate-spin"/> : <FileDown size={11}/>}
+              {exportingPdf ? "Generando…" : "Guardar PDF"}
+            </button>
+            <button onClick={pedirFirmaMensual} disabled={saving || loading}
+              className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
+              style={{ backgroundColor: "#006b3c" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#004d2a"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#006b3c"; }}>
               {saving ? <Loader2 size={11} className="animate-spin"/> : <PenLine size={11}/>}
               {saving ? "Guardando…" : "Guardar mes"}
             </button>
@@ -778,18 +810,19 @@ export default function TermohigrometriaPage() {
         </div>
       )}
 
-      <TermoPrintTemplate
-        className="print-only"
-        lecturas={lecturas}
-        mes={mes}
-        año={año}
-        info={info}
-        firmas={firmas}
-        tempMin={tempMin}
-        tempMax={tempMax}
-        humMin={humMin}
-        humMax={humMax}
-      />
+      <div ref={printTemplateRef} className="print-only">
+        <TermoPrintTemplate
+          lecturas={lecturas}
+          mes={mes}
+          año={año}
+          info={info}
+          firmas={firmas}
+          tempMin={tempMin}
+          tempMax={tempMax}
+          humMin={humMin}
+          humMax={humMax}
+        />
+      </div>
 
       <HospitalFooter/>
 
