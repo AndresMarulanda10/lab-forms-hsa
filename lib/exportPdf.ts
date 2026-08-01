@@ -1,6 +1,7 @@
 import "client-only";
 
-const EXPORT_WIDTH_PX = 1120;
+const A4_LANDSCAPE_WIDTH_MM = 297;
+const A4_LANDSCAPE_HEIGHT_MM = 210;
 
 function waitForImages(element: HTMLElement): Promise<void[]> {
   return Promise.all(
@@ -44,7 +45,8 @@ export async function downloadElementAsPdf(element: HTMLElement, filename: strin
     "position: fixed",
     "left: -100000px",
     "top: 0",
-    `width: ${EXPORT_WIDTH_PX}px`,
+    `width: ${A4_LANDSCAPE_WIDTH_MM}mm`,
+    `height: ${A4_LANDSCAPE_HEIGHT_MM}mm`,
     "background: white",
     "pointer-events: none",
   ].join(";");
@@ -57,14 +59,20 @@ export async function downloadElementAsPdf(element: HTMLElement, filename: strin
     await waitForLayout();
 
     const { default: html2pdf } = await import("html2pdf.js");
+    // Avoid html2pdf rounding an exact A4 canvas onto a blank trailing page.
+    const captureHeight = clone.clientHeight - 1;
     const options = {
-      margin: 5,
+      margin: 0,
       filename,
       image: { type: "jpeg" as const, quality: 0.98 },
       html2canvas: {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
+        width: clone.scrollWidth,
+        height: captureHeight,
+        windowWidth: clone.scrollWidth,
+        windowHeight: clone.clientHeight,
       },
       jsPDF: {
         unit: "mm",

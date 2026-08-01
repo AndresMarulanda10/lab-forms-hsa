@@ -71,13 +71,59 @@
 }
 
 @media print {
-  @page { size: A4 landscape; margin: 5mm; }
+  @page { size: A4 landscape; margin: 0; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .no-print  { display: none !important; }
   .print-only { display: block !important; }
-  body { background: white !important; color: #1a1a1a !important; }
+  html,
+  body {
+    width: 297mm !important;
+    height: 210mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: #1a1a1a !important;
+  }
+  body > :not(main) { display: none !important; }
+  main {
+    width: 297mm !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  main > div {
+    margin: 0 !important;
+  }
   .card { border: none !important; box-shadow: none !important; }
   tr { break-inside: avoid; page-break-inside: avoid; }
 }
 
 .print-only { display: none; }
+
+.printable-sheet {
+  box-sizing: border-box;
+  width: 297mm;
+  height: 210mm;
+  margin: 0 !important;
+  padding: 5mm;
+  overflow: hidden;
+  break-after: avoid;
+  break-before: avoid;
+  break-inside: avoid;
+  page-break-after: avoid;
+  page-break-before: avoid;
+  page-break-inside: avoid;
+  background: white;
+}
+
+.printable-sheet-header,
+.printable-sheet-content,
+.printable-sheet-footer {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.printable-sheet-header,
+.printable-sheet-content {
+  margin-bottom: 2mm;
+}

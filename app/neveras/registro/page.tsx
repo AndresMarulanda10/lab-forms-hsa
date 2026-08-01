@@ -11,6 +11,7 @@ import HospitalFooter from "@/components/HospitalFooter";
 import NeveraChart from "@/components/NeveraChart";
 import FirmaGuardadoModal from "@/components/FirmaGuardadoModal";
 import NeveraPrintTemplate from "@/components/NeveraPrintTemplate";
+import PrintableSheet from "@/components/PrintableSheet";
 import type {
   Nevera, RegistroNevera, LecturasNevera,
   JornadaKey, Jornada, LecturaAuditada, LecturaHistorial,
@@ -121,7 +122,7 @@ export default function NeverasRegistroPage() {
   const [firmas, setFirmas] = useState<Record<JornadaKey, string>>({ ...EMPTY_FIRMAS });
   const [info, setInfo] = useState<RegistroNeveraFormInfo>({ ...EMPTY_INFO });
   const [deviceDraft, setDeviceDraft] = useState<NeveraDeviceDraft>({ ...EMPTY_DEVICE_DRAFT });
-  const printTemplateRef = useRef<HTMLDivElement>(null);
+  const printableSheetRef = useRef<HTMLDivElement>(null);
   const pdfExportInProgress = useRef(false);
 
   // ── Ingreso por lectura ────────────────────────────────────────────────────
@@ -496,7 +497,7 @@ export default function NeverasRegistroPage() {
   };
 
   const handleDownloadPdf = async () => {
-    if (pdfExportInProgress.current || !printTemplateRef.current) return;
+    if (pdfExportInProgress.current || !printableSheetRef.current) return;
 
     pdfExportInProgress.current = true;
     setExportingPdf(true);
@@ -507,7 +508,7 @@ export default function NeverasRegistroPage() {
         `${año}-${String(mes).padStart(2, "0")}`,
         selectedNevera?.nombre ?? selectedNevera?.id,
       ]);
-      await downloadElementAsPdf(printTemplateRef.current, filename);
+      await downloadElementAsPdf(printableSheetRef.current, filename);
       showToast("PDF descargado ✓");
     } catch (error: unknown) {
       showToast(getErrorMessage(error, "No se pudo generar el PDF."), "err");
@@ -557,8 +558,10 @@ export default function NeverasRegistroPage() {
   // ── Sin neveras ────────────────────────────────────────────────────────────
   if (neveras.length === 0 && !loading) return (
     <div className="space-y-4">
-      <HospitalHeader codigo="M-GADT-LAB-F-029" version="2"
-        nombreDocumento="FORMATO PARA REGISTRO DE TEMPERATURA DE LA CADENA DE FRÍO" />
+      <div className="no-print">
+        <HospitalHeader codigo="M-GADT-LAB-F-029" version="2"
+          nombreDocumento="FORMATO PARA REGISTRO DE TEMPERATURA DE LA CADENA DE FRÍO" />
+      </div>
       <div className="card text-center py-12">
         <Refrigerator size={44} className="text-gray-200 mx-auto mb-3"/>
         <p className="text-gray-500 mb-4">
@@ -581,8 +584,10 @@ export default function NeverasRegistroPage() {
       )}
 
       {/* ═══ ENCABEZADO ══════════════════════════════════════════════════════ */}
-      <HospitalHeader codigo="M-GADT-LAB-F-029" version="2"
-        nombreDocumento="FORMATO PARA REGISTRO DE TEMPERATURA DE LA CADENA DE FRÍO" />
+      <div className="no-print">
+        <HospitalHeader codigo="M-GADT-LAB-F-029" version="2"
+          nombreDocumento="FORMATO PARA REGISTRO DE TEMPERATURA DE LA CADENA DE FRÍO" />
+      </div>
 
       {loadError && (
         <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 no-print">
@@ -816,7 +821,13 @@ export default function NeverasRegistroPage() {
         </div>
       </div>
 
-      <div ref={printTemplateRef} className="print-only">
+      <PrintableSheet
+        ref={printableSheetRef}
+        header={(
+          <HospitalHeader codigo="M-GADT-LAB-F-029" version="2"
+            nombreDocumento="FORMATO PARA REGISTRO DE TEMPERATURA DE LA CADENA DE FRÍO" />
+        )}
+      >
         <NeveraPrintTemplate
           lecturas={lecturas}
           mes={mes}
@@ -827,9 +838,11 @@ export default function NeverasRegistroPage() {
           rangoMin={rangoMin}
           rangoMax={rangoMax}
         />
-      </div>
+      </PrintableSheet>
 
-      <HospitalFooter />
+      <div className="no-print">
+        <HospitalFooter />
+      </div>
 
       <div className="no-print">
         {/* ── Modal de confirmación POR LECTURA ────────────────────────────── */}
