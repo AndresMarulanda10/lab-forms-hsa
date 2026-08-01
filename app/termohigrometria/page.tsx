@@ -476,29 +476,33 @@ export default function TermohigrometriaPage() {
   // ── Guardar mes con confirmación ───────────────────────────────────────────
   const handleSaveMensual = async ({ firma: f, jornada }: { firma: string; jornada?: JornadaKey }) => {
     setSaving(true);
+    try {
+      const jornadaKey = (jornada ?? "manana") as JornadaKey;
+      const resp =
+        jornadaKey === "manana" ? info.responsable_manana :
+        jornadaKey === "tarde"  ? info.responsable_tarde  :
+                                  info.responsable_noche;
 
-    const jornadaKey = (jornada ?? "manana") as JornadaKey;
-    const resp =
-      jornadaKey === "manana" ? info.responsable_manana :
-      jornadaKey === "tarde"  ? info.responsable_tarde  :
-                                info.responsable_noche;
+      const audit = { ts: new Date().toISOString(), quien: resp || "—", firma: f };
+      const lecturasAuditadas = enriquecerLecturasTermohigro(lecturas, lecturasOriginales.current, audit);
+      lecturasOriginales.current = lecturasAuditadas;
+      setLecturas(lecturasAuditadas);
 
-    const audit = { ts: new Date().toISOString(), quien: resp || "—", firma: f };
-    const lecturasAuditadas = enriquecerLecturasTermohigro(lecturas, lecturasOriginales.current, audit);
-    lecturasOriginales.current = lecturasAuditadas;
-    setLecturas(lecturasAuditadas);
+      const nuevasFirmas = { ...firmas, [jornadaKey]: f };
+      setFirmas(nuevasFirmas);
 
-    const nuevasFirmas = { ...firmas, [jornadaKey]: f };
-    setFirmas(nuevasFirmas);
+      const res = await fetch("/api/termohigrometria", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildSaveBody(lecturasAuditadas, nuevasFirmas, resp || "", f)),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      clearTermohigrometriaDraft(año, mes);
+      showToast("Registro guardado ✓");
 
-    const res = await fetch("/api/termohigrometria", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildSaveBody(lecturasAuditadas, nuevasFirmas, resp || "", f)),
-    });
-    setSaving(false);
-    if (!res.ok) throw new Error((await res.json()).error);
-    clearTermohigrometriaDraft(año, mes);
-    showToast("Registro guardado ✓");
+      requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── Navegación de mes ──────────────────────────────────────────────────────
@@ -637,10 +641,7 @@ export default function TermohigrometriaPage() {
               🧪 Prueba
             </button>
             <button onClick={pedirFirmaMensual} disabled={saving || loading}
-              className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
-              style={{ backgroundColor: "#006b3c" }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#004d2a"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#006b3c"; }}>
+              className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50">
               {saving ? <Loader2 size={11} className="animate-spin"/> : <PenLine size={11}/>}
               {saving ? "Guardando…" : "Guardar mes"}
             </button>

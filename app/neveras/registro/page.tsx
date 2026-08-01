@@ -486,6 +486,8 @@ export default function NeverasRegistroPage() {
       });
       if (!res.ok) throw new Error((await res.json()).error);
       showToast("Registro mensual guardado ✓");
+
+      requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
     } finally {
       setSaving(false);
     }
@@ -642,10 +644,7 @@ export default function NeverasRegistroPage() {
             </button>
             {/* Guardar mensual: responsables + confirmación mensual */}
             <button onClick={pedirFirmaMensual} disabled={saving || loading}
-              className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
-              style={{ backgroundColor: "#006b3c" }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#004d2a"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#006b3c"; }}>
+              className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[11px] font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50">
               {saving ? <Loader2 size={11} className="animate-spin"/> : <Save size={11}/>}
               {saving ? "Guardando…" : "Guardar mes"}
             </button>
