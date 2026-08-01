@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import {
   ChevronLeft, ChevronRight, FileDown, Printer, Loader2,
   CheckCircle, AlertCircle, PenLine,
@@ -17,48 +16,26 @@ import type {
 } from "@/lib/types";
 import { MESES, getDiasEnMes, enriquecerLecturasTermohigro } from "@/lib/types";
 import { buildPdfFilename, downloadElementAsPdf } from "@/lib/exportPdf";
+import {
+  clearTermohigrometriaDraft,
+  normalizeTermohigrometriaInfo,
+  parseMonthContext,
+  readTermohigrometriaDraft,
+  resolveTermohigrometriaDraft,
+  termohigrometriaDraftsEqual,
+  writeTermohigrometriaDraft,
+} from "@/lib/termohigrometriaPersistence";
+import type {
+  TermohigrometriaDraftData,
+  TermohigrometriaFirmas,
+  TermohigrometriaInfo,
+} from "@/lib/termohigrometriaPersistence";
 
 // ─── Colores y etiquetas de jornada ──────────────────────────────────────────
 type J = "M" | "T" | "N";
 const J_COLOR: Record<J, string> = { M: "#006b3c", T: "#d97706", N: "#4338ca" };
 const J_LABEL: Record<J, string> = { M: "Mañana", T: "Tarde", N: "Noche" };
 const JORNADAS: J[] = ["M", "T", "N"];
-
-interface TermohigrometriaInfo {
-  ubicacion: string;
-  dispositivo_nombre: string;
-  dispositivo_marca: string;
-  dispositivo_modelo: string;
-  dispositivo_serial: string;
-  certificado: string;
-  factor_correccion_temp: string;
-  factor_correccion_hum: string;
-  responsable_manana: string;
-  responsable_tarde: string;
-  responsable_noche: string;
-  observaciones: string;
-}
-
-interface TermohigrometriaFirmas {
-  manana: string;
-  tarde: string;
-  noche: string;
-}
-
-interface TermohigrometriaDraft {
-  info: TermohigrometriaInfo;
-  firmas: TermohigrometriaFirmas;
-  lecturas: LecturasTermohigrometria;
-  lecturasOriginales: LecturasTermohigrometria;
-  jornadaAdd: J;
-  inputDia: string;
-  inputTemp: string;
-  inputHum: string;
-  tempMin: number;
-  tempMax: number;
-  humMin: number;
-  humMax: number;
-}
 
 const EMPTY_FIRMAS: TermohigrometriaFirmas = { manana: "", tarde: "", noche: "" };
 
@@ -76,9 +53,6 @@ const EMPTY_INFO: TermohigrometriaInfo = {
   responsable_noche: "",
   observaciones: "",
 };
-
-const buildDraftKey = (año: number, mes: number) =>
-  `lab-forms-hsa:termohigrometria:draft:${año}-${String(mes).padStart(2, "0")}`;
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message) return error.message;
@@ -104,150 +78,73 @@ const getApiErrorMessage = async (res: Response, fallback: string) => {
   return fallback;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
+const CONFLICT_MESSAGE = "Hay datos más recientes en el servidor. Recarga la página para revisarlos y decidir si recuperas o descartas tu borrador.";
 
-const isJornada = (value: unknown): value is J =>
-  value === "M" || value === "T" || value === "N";
-
-const readText = (source: Record<string, unknown>, key: keyof TermohigrometriaInfo, fallback = "") => {
-  const value = source[key];
-  return typeof value === "string" ? value : fallback;
-};
-
-const readNumber = (source: Record<string, unknown>, key: string, fallback: number) => {
-  const value = source[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-};
-
-const normalizeInfo = (value: unknown): TermohigrometriaInfo => {
-  const source = isRecord(value) ? value : {};
-  return {
-    ubicacion: readText(source, "ubicacion"),
-    dispositivo_nombre: readText(source, "dispositivo_nombre", "TERMOHIGROMETRO"),
-    dispositivo_marca: readText(source, "dispositivo_marca"),
-    dispositivo_modelo: readText(source, "dispositivo_modelo"),
-    dispositivo_serial: readText(source, "dispositivo_serial"),
-    certificado: readText(source, "certificado"),
-    factor_correccion_temp: readText(source, "factor_correccion_temp", "0"),
-    factor_correccion_hum: readText(source, "factor_correccion_hum", "0"),
-    responsable_manana: readText(source, "responsable_manana"),
-    responsable_tarde: readText(source, "responsable_tarde"),
-    responsable_noche: readText(source, "responsable_noche"),
-    observaciones: readText(source, "observaciones"),
-  };
-};
-
-const normalizeFirmas = (value: unknown): TermohigrometriaFirmas => {
-  const source = isRecord(value) ? value : {};
-  return {
-    manana: typeof source.manana === "string" ? source.manana : "",
-    tarde: typeof source.tarde === "string" ? source.tarde : "",
-    noche: typeof source.noche === "string" ? source.noche : "",
-  };
+type SaveContext = {
+  year: number;
+  month: number;
+  expectedUpdatedAt: string | null;
 };
 
 const normalizeLecturas = (value: unknown): LecturasTermohigrometria =>
-  isRecord(value) ? { ...(value as LecturasTermohigrometria) } : {};
-
-const applyRegistro = (
-  registro: RegistroTermohigrometria | null,
-  setInfo: Dispatch<SetStateAction<TermohigrometriaInfo>>,
-  setFirmas: Dispatch<SetStateAction<TermohigrometriaFirmas>>,
-  setLecturas: Dispatch<SetStateAction<LecturasTermohigrometria>>,
-  lecturasOriginales: MutableRefObject<LecturasTermohigrometria>,
-) => {
-  if (!registro) {
-    setInfo({ ...EMPTY_INFO });
-    setFirmas({ ...EMPTY_FIRMAS });
-    setLecturas({});
-    lecturasOriginales.current = {};
-    return;
-  }
-
-  const lecturasHydrated = normalizeLecturas(registro.lecturas);
-
-  setInfo({
-    ubicacion: registro.ubicacion,
-    dispositivo_nombre: registro.dispositivo_nombre,
-    dispositivo_marca: registro.dispositivo_marca,
-    dispositivo_modelo: registro.dispositivo_modelo,
-    dispositivo_serial: registro.dispositivo_serial,
-    certificado: registro.certificado,
-    factor_correccion_temp: registro.factor_correccion_temp ?? registro.factor_correccion ?? "0",
-    factor_correccion_hum: registro.factor_correccion_hum ?? "0",
-    responsable_manana: registro.responsable_manana ?? "",
-    responsable_tarde: registro.responsable_tarde ?? "",
-    responsable_noche: registro.responsable_noche ?? "",
-    observaciones: registro.observaciones,
-  });
-  setFirmas({
-    manana: registro.firma_manana ?? "",
-    tarde: registro.firma_tarde ?? "",
-    noche: registro.firma_noche ?? "",
-  });
-  setLecturas(lecturasHydrated);
-  lecturasOriginales.current = lecturasHydrated;
-};
-
-const readTermohigrometriaDraft = (año: number, mes: number): TermohigrometriaDraft | null => {
-  try {
-    const key = buildDraftKey(año, mes);
-    const raw = window.localStorage.getItem(key) ?? window.sessionStorage.getItem(key);
-    if (!raw) return null;
-
-    const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed)) return null;
-
-    return {
-      info: normalizeInfo(parsed.info),
-      firmas: normalizeFirmas(parsed.firmas),
-      lecturas: normalizeLecturas(parsed.lecturas),
-      lecturasOriginales: normalizeLecturas(parsed.lecturasOriginales),
-      jornadaAdd: isJornada(parsed.jornadaAdd) ? parsed.jornadaAdd : "M",
-      inputDia: typeof parsed.inputDia === "string" ? parsed.inputDia : "1",
-      inputTemp: typeof parsed.inputTemp === "string" ? parsed.inputTemp : "",
-      inputHum: typeof parsed.inputHum === "string" ? parsed.inputHum : "",
-      tempMin: readNumber(parsed, "tempMin", 15),
-      tempMax: readNumber(parsed, "tempMax", 30),
-      humMin: readNumber(parsed, "humMin", 40),
-      humMax: readNumber(parsed, "humMax", 70),
-    };
-  } catch {
-    return null;
-  }
-};
-
-const writeTermohigrometriaDraft = (año: number, mes: number, draft: TermohigrometriaDraft) => {
-  try {
-    window.localStorage.setItem(buildDraftKey(año, mes), JSON.stringify(draft));
-  } catch {
-    // localStorage puede no estar disponible; en ese caso dejamos que la DB sea la fuente.
-  }
-};
-
-const clearTermohigrometriaDraft = (año: number, mes: number) => {
-  try {
-    const key = buildDraftKey(año, mes);
-    window.localStorage.removeItem(key);
-    window.sessionStorage.removeItem(key);
-  } catch {
-    // No-op: limpiar borrador es una mejora, no debe romper el guardado.
-  }
-};
+  typeof value === "object" && value !== null ? { ...(value as LecturasTermohigrometria) } : {};
 
 // Mappers entre J y JornadaKey
 const toJornadaKey = (j: J): JornadaKey =>
   j === "M" ? "manana" : j === "T" ? "tarde" : "noche";
 
-export default function TermohigrometriaPage() {
-  const now = new Date();
-  const [año, setAño] = useState(now.getFullYear());
-  const [mes,  setMes]  = useState(now.getMonth() + 1);
+const buildDatabaseDraft = (
+  registro: RegistroTermohigrometria | null,
+  inputDia: string,
+): TermohigrometriaDraftData => {
+  const lecturas = normalizeLecturas(registro?.lecturas);
+  return {
+    info: normalizeTermohigrometriaInfo(registro ?? EMPTY_INFO),
+    firmas: registro ? {
+      manana: registro.firma_manana ?? "",
+      tarde: registro.firma_tarde ?? "",
+      noche: registro.firma_noche ?? "",
+    } : { ...EMPTY_FIRMAS },
+    lecturas,
+    lecturasOriginales: lecturas,
+    jornadaAdd: "M",
+    inputDia,
+    inputTemp: "",
+    inputHum: "",
+    tempMin: 15,
+    tempMax: 30,
+    humMin: 40,
+    humMax: 70,
+  };
+};
+
+const parseSavedRegistro = (value: unknown): RegistroTermohigrometria => {
+  if (
+    typeof value !== "object" || value === null ||
+    !("updated_at" in value) || typeof value.updated_at !== "string" ||
+    Number.isNaN(Date.parse(value.updated_at))
+  ) {
+    throw new Error("El servidor no devolvió una versión válida del registro guardado.");
+  }
+  return value as RegistroTermohigrometria;
+};
+
+type TermohigrometriaPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default function TermohigrometriaPage({ searchParams }: TermohigrometriaPageProps) {
+  const query = use(searchParams);
+  const initialContext = parseMonthContext(query.year, query.month);
+  const [año, setAño] = useState(initialContext?.year ?? 1970);
+  const [mes,  setMes]  = useState(initialContext?.month ?? 1);
+  const [contextReady, setContextReady] = useState(initialContext !== null);
   const [loading,      setLoading]      = useState(true);
   const [saving,       setSaving]       = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [loadError,    setLoadError]    = useState<string | null>(null);
+  const [conflictingDraft, setConflictingDraft] = useState<TermohigrometriaDraftData | null>(null);
   const [firmaModal,   setFirmaModal]   = useState(false);
   const [firmaModalAdd, setFirmaModalAdd] = useState(false);
   const [pendingAdd,   setPendingAdd]   = useState<{ dia: number; temp: number; hum: number | null } | null>(null);
@@ -261,13 +158,20 @@ export default function TermohigrometriaPage() {
   const [lecturas, setLecturas] = useState<LecturasTermohigrometria>({});
   const lecturasOriginales = useRef<LecturasTermohigrometria>({});
   const draftHydrated = useRef(false);
+  const baseline = useRef<TermohigrometriaDraftData | null>(null);
+  const serverUpdatedAt = useRef<string | null>(null);
+  const legacyAudit = useRef({ responsable: "", firma: "" });
   const [info, setInfo] = useState<TermohigrometriaInfo>({ ...EMPTY_INFO });
   const printTemplateRef = useRef<HTMLDivElement>(null);
   const pdfExportInProgress = useRef(false);
+  const configSaveInProgress = useRef(false);
+  const persistenceInProgress = useRef(false);
+  const visibleContext = useRef({ year: año, month: mes });
+  visibleContext.current = { year: año, month: mes };
 
   // ── Ingreso ────────────────────────────────────────────────────────────────
   const [jornadaAdd, setJornadaAdd] = useState<J>("M");
-  const [inputDia,   setInputDia]   = useState(String(now.getDate()));
+  const [inputDia,   setInputDia]   = useState("1");
   const [inputTemp,  setInputTemp]  = useState("");
   const [inputHum,   setInputHum]   = useState("");
 
@@ -276,14 +180,31 @@ export default function TermohigrometriaPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  useEffect(() => {
+    if (contextReady) return;
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const params = new URLSearchParams(window.location.search);
+    params.set("year", String(year));
+    params.set("month", String(month));
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+    setAño(year);
+    setMes(month);
+    setContextReady(true);
+  }, [contextReady]);
+
   // ── Carga ──────────────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!contextReady) return;
     let active = true;
 
     const load = async () => {
       draftHydrated.current = false;
       setLoading(true);
       setLoadError(null);
+      setConflictingDraft(null);
 
       try {
         const res  = await fetch(`/api/termohigrometria?año=${año}&mes=${mes}`);
@@ -295,44 +216,68 @@ export default function TermohigrometriaPage() {
         const registros = Array.isArray(data) ? data as RegistroTermohigrometria[] : [];
         if (!active) return;
 
-        applyRegistro(registros[0] ?? null, setInfo, setFirmas, setLecturas, lecturasOriginales);
+        const registro = registros[0] ?? null;
+        const databaseData = buildDatabaseDraft(registro, String(new Date().getDate()));
+        const storedDraft = readTermohigrometriaDraft(
+          window.localStorage,
+          window.sessionStorage,
+          año,
+          mes,
+        );
+        const resolvedDraft = storedDraft
+          ? resolveTermohigrometriaDraft(storedDraft, registro?.updated_at ?? null, registro !== null)
+          : null;
+        const displayedData = resolvedDraft ?? databaseData;
+        const conflict = storedDraft && !storedDraft.legacy && !resolvedDraft ? storedDraft.data : null;
+        setConflictingDraft(conflict);
 
-        const draft = readTermohigrometriaDraft(año, mes);
-        if (draft) {
-          setInfo(draft.info);
-          setFirmas(draft.firmas);
-          setLecturas(normalizeLecturas(draft.lecturas));
-          lecturasOriginales.current = normalizeLecturas(draft.lecturasOriginales);
-          setJornadaAdd(draft.jornadaAdd);
-          setInputDia(draft.inputDia);
-          setInputTemp(draft.inputTemp);
-          setInputHum(draft.inputHum);
-          setTempMin(draft.tempMin);
-          setTempMax(draft.tempMax);
-          setHumMin(draft.humMin);
-          setHumMax(draft.humMax);
+        if (storedDraft && !resolvedDraft && !conflict) {
+          clearTermohigrometriaDraft(window.localStorage, window.sessionStorage, año, mes);
         }
+
+        baseline.current = databaseData;
+        serverUpdatedAt.current = registro?.updated_at ?? null;
+        legacyAudit.current = {
+          responsable: registro?.responsable ?? "",
+          firma: registro?.firma ?? "",
+        };
+        setInfo(displayedData.info);
+        setFirmas(displayedData.firmas);
+        setLecturas(displayedData.lecturas);
+        lecturasOriginales.current = displayedData.lecturasOriginales;
+        setJornadaAdd(displayedData.jornadaAdd);
+        setInputDia(displayedData.inputDia);
+        setInputTemp(displayedData.inputTemp);
+        setInputHum(displayedData.inputHum);
+        setTempMin(displayedData.tempMin);
+        setTempMax(displayedData.tempMax);
+        setHumMin(displayedData.humMin);
+        setHumMax(displayedData.humMax);
       } catch (error: unknown) {
         if (!active) return;
         const message = getErrorMessage(error, "No se pudo cargar el registro de termohigrometría.");
-        const draft = readTermohigrometriaDraft(año, mes);
+        const storedDraft = readTermohigrometriaDraft(
+          window.localStorage,
+          window.sessionStorage,
+          año,
+          mes,
+        );
+        const displayedData = storedDraft?.data ?? buildDatabaseDraft(null, String(new Date().getDate()));
 
-        if (draft) {
-          setInfo(draft.info);
-          setFirmas(draft.firmas);
-          setLecturas(normalizeLecturas(draft.lecturas));
-          lecturasOriginales.current = normalizeLecturas(draft.lecturasOriginales);
-          setJornadaAdd(draft.jornadaAdd);
-          setInputDia(draft.inputDia);
-          setInputTemp(draft.inputTemp);
-          setInputHum(draft.inputHum);
-          setTempMin(draft.tempMin);
-          setTempMax(draft.tempMax);
-          setHumMin(draft.humMin);
-          setHumMax(draft.humMax);
-        } else {
-          applyRegistro(null, setInfo, setFirmas, setLecturas, lecturasOriginales);
-        }
+        baseline.current = null;
+        serverUpdatedAt.current = storedDraft?.baseUpdatedAt ?? null;
+        setInfo(displayedData.info);
+        setFirmas(displayedData.firmas);
+        setLecturas(displayedData.lecturas);
+        lecturasOriginales.current = displayedData.lecturasOriginales;
+        setJornadaAdd(displayedData.jornadaAdd);
+        setInputDia(displayedData.inputDia);
+        setInputTemp(displayedData.inputTemp);
+        setInputHum(displayedData.inputHum);
+        setTempMin(displayedData.tempMin);
+        setTempMax(displayedData.tempMax);
+        setHumMin(displayedData.humMin);
+        setHumMax(displayedData.humMax);
 
         setLoadError(message);
         showToast(message, "err");
@@ -345,12 +290,12 @@ export default function TermohigrometriaPage() {
     load();
 
     return () => { active = false; };
-  }, [año, mes]);
+  }, [año, mes, contextReady]);
 
   useEffect(() => {
-    if (loading || !draftHydrated.current) return;
+    if (loading || !draftHydrated.current || !baseline.current || conflictingDraft) return;
 
-    writeTermohigrometriaDraft(año, mes, {
+    const currentDraft: TermohigrometriaDraftData = {
       info,
       firmas,
       lecturas,
@@ -363,32 +308,173 @@ export default function TermohigrometriaPage() {
       tempMax,
       humMin,
       humMax,
-    });
-  }, [año, mes, loading, info, firmas, lecturas, jornadaAdd, inputDia, inputTemp, inputHum, tempMin, tempMax, humMin, humMax]);
+    };
+
+    try {
+      if (termohigrometriaDraftsEqual(currentDraft, baseline.current)) {
+        clearTermohigrometriaDraft(window.localStorage, window.sessionStorage, año, mes);
+      } else {
+        writeTermohigrometriaDraft(
+          window.localStorage,
+          año,
+          mes,
+          currentDraft,
+          serverUpdatedAt.current,
+        );
+      }
+    } catch {
+      // Browser storage is optional; the database remains the source of truth.
+    }
+  }, [año, mes, loading, info, firmas, lecturas, jornadaAdd, inputDia, inputTemp, inputHum, tempMin, tempMax, humMin, humMax, conflictingDraft]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const responsableDeJornada = (j: J) =>
     j === "M" ? info.responsable_manana :
     j === "T" ? info.responsable_tarde  : info.responsable_noche;
 
+  const getCurrentDraft = (
+    overrides: Partial<TermohigrometriaDraftData> = {},
+  ): TermohigrometriaDraftData => ({
+    info,
+    firmas,
+    lecturas,
+    lecturasOriginales: lecturasOriginales.current,
+    jornadaAdd,
+    inputDia,
+    inputTemp,
+    inputHum,
+    tempMin,
+    tempMax,
+    humMin,
+    humMax,
+    ...overrides,
+  });
+
+  const rebaseDraftAfterSave = (
+    saved: RegistroTermohigrometria,
+    currentDraft: TermohigrometriaDraftData,
+    requestContext: SaveContext,
+  ) => {
+    if (
+      visibleContext.current.year !== requestContext.year ||
+      visibleContext.current.month !== requestContext.month ||
+      serverUpdatedAt.current !== requestContext.expectedUpdatedAt
+    ) return;
+
+    const databaseData = buildDatabaseDraft(saved, String(new Date().getDate()));
+    baseline.current = databaseData;
+    serverUpdatedAt.current = saved.updated_at;
+    legacyAudit.current = {
+      responsable: saved.responsable ?? "",
+      firma: saved.firma ?? "",
+    };
+
+    try {
+      clearTermohigrometriaDraft(window.localStorage, window.sessionStorage, requestContext.year, requestContext.month);
+      if (!termohigrometriaDraftsEqual(currentDraft, databaseData)) {
+        writeTermohigrometriaDraft(
+          window.localStorage,
+          requestContext.year,
+          requestContext.month,
+          currentDraft,
+          saved.updated_at,
+        );
+      }
+    } catch {
+      // Browser storage is optional; the saved server version is still authoritative.
+    }
+  };
+
   // ── Helper para armar el body de guardado ─────────────────────────────────
   const buildSaveBody = (
+    requestContext: SaveContext,
+    infoSnapshot: TermohigrometriaInfo,
     lecs: LecturasTermohigrometria,
     fs: typeof firmas,
     resp: string,
     firma?: string,
   ) => ({
-    año, mes, ...info,
+    ...infoSnapshot,
+    año: requestContext.year,
+    mes: requestContext.month,
     lecturas: lecs,
     firma_manana: fs.manana,
     firma_tarde:  fs.tarde,
     firma_noche:  fs.noche,
     responsable:  resp,
     firma: firma ?? "",
+    expected_updated_at: requestContext.expectedUpdatedAt,
   });
+
+  const captureSaveContext = (): SaveContext => ({
+    year: año,
+    month: mes,
+    expectedUpdatedAt: serverUpdatedAt.current,
+  });
+
+  const isCurrentSaveContext = (requestContext: SaveContext) =>
+    visibleContext.current.year === requestContext.year &&
+    visibleContext.current.month === requestContext.month &&
+    serverUpdatedAt.current === requestContext.expectedUpdatedAt;
+
+  const persistenceBlocked = () => {
+    if (loading || loadError || conflictingDraft) {
+      showToast(conflictingDraft
+        ? "Recupera o descarta el borrador anterior antes de guardar."
+        : "No se puede guardar hasta cargar correctamente los datos del servidor.", "err");
+      return true;
+    }
+    return persistenceInProgress.current;
+  };
+
+  const throwPersistenceError = async (res: Response, fallback: string) => {
+    if (res.status === 409) throw new Error(CONFLICT_MESSAGE);
+    throw new Error(await getApiErrorMessage(res, fallback));
+  };
+
+  const handleSaveConfig = async () => {
+    if (configSaveInProgress.current || persistenceBlocked()) return;
+
+    const requestContext = captureSaveContext();
+    const infoSnapshot = { ...info };
+    const draftSnapshot = getCurrentDraft({ info: infoSnapshot });
+    configSaveInProgress.current = true;
+    persistenceInProgress.current = true;
+    setSavingConfig(true);
+    try {
+      const res = await fetch("/api/termohigrometria", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildSaveBody(
+          requestContext,
+          infoSnapshot,
+          lecturas,
+          firmas,
+          legacyAudit.current.responsable,
+          legacyAudit.current.firma,
+        )),
+      });
+      if (!res.ok) {
+        await throwPersistenceError(res, "No se pudo guardar la configuración.");
+      }
+
+      const saved = parseSavedRegistro(await res.json());
+      rebaseDraftAfterSave(saved, draftSnapshot, requestContext);
+      if (isCurrentSaveContext({ ...requestContext, expectedUpdatedAt: saved.updated_at })) {
+        showToast("Configuración guardada.");
+      }
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, "No se pudo guardar la configuración."), "err");
+    } finally {
+      configSaveInProgress.current = false;
+      persistenceInProgress.current = false;
+      setSavingConfig(false);
+    }
+  };
 
   // ── Agregar lectura (abre modal de confirmación por entrada) ──────────────
   const agregar = () => {
+    if (persistenceBlocked()) return;
     // 1. Validar responsable de la jornada
     if (!responsableDeJornada(jornadaAdd).trim()) {
       showToast(
@@ -413,7 +499,9 @@ export default function TermohigrometriaPage() {
 
   // ── Confirmar lectura (auto-guarda en DB) ─────────────────────────────────
   const handleAddWithFirma = async ({ firma }: { firma: string; jornada?: JornadaKey }) => {
-    if (!pendingAdd) return;
+    if (!pendingAdd || persistenceBlocked()) return;
+    const requestContext = captureSaveContext();
+    const infoSnapshot = { ...info };
     const { dia, temp, hum } = pendingAdd;
     const clave = `${dia}_${jornadaAdd}`;
     const resp  = responsableDeJornada(jornadaAdd);
@@ -447,25 +535,45 @@ export default function TermohigrometriaPage() {
     lecturasOriginales.current = nuevasLecturas;
 
     // Auto-guardar en DB
-    const res = await fetch("/api/termohigrometria", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildSaveBody(nuevasLecturas, firmas, resp || "—", firma)),
-    });
-    if (!res.ok) throw new Error((await res.json()).error);
-    clearTermohigrometriaDraft(año, mes);
+    persistenceInProgress.current = true;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/termohigrometria", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildSaveBody(requestContext, infoSnapshot, nuevasLecturas, firmas, resp || "—", firma)),
+      });
+      if (!res.ok) await throwPersistenceError(res, "No se pudo guardar la lectura.");
+      const saved = parseSavedRegistro(await res.json());
 
-    // Limpiar inputs y avanzar día
-    const max = getDiasEnMes(mes, año);
-    setInputTemp("");
-    setInputHum("");
-    setInputDia(String(dia < max ? dia + 1 : dia));
-    setPendingAdd(null);
-    showToast(`Lectura día ${dia} · ${J_LABEL[jornadaAdd]} guardada ✓`);
+      const max = getDiasEnMes(requestContext.month, requestContext.year);
+      const nextInputDia = String(dia < max ? dia + 1 : dia);
+      rebaseDraftAfterSave(saved, getCurrentDraft({
+        info: infoSnapshot,
+        lecturas: nuevasLecturas,
+        lecturasOriginales: nuevasLecturas,
+        inputDia: nextInputDia,
+        inputTemp: "",
+        inputHum: "",
+      }), requestContext);
+      if (isCurrentSaveContext({ ...requestContext, expectedUpdatedAt: saved.updated_at })) {
+        setInputTemp("");
+        setInputHum("");
+        setInputDia(nextInputDia);
+        setPendingAdd(null);
+        showToast(`Lectura día ${dia} · ${J_LABEL[jornadaAdd]} guardada ✓`);
+      }
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, "No se pudo guardar la lectura."), "err");
+    } finally {
+      persistenceInProgress.current = false;
+      setSaving(false);
+    }
   };
 
   // ── Pedir confirmación mensual ─────────────────────────────────────────────
   const pedirFirmaMensual = () => {
+    if (persistenceBlocked()) return;
     if (Object.keys(lecturas).length === 0) {
       showToast("Ingresa al menos una lectura antes de guardar.", "err");
       return;
@@ -479,6 +587,10 @@ export default function TermohigrometriaPage() {
 
   // ── Guardar mes con confirmación ───────────────────────────────────────────
   const handleSaveMensual = async ({ firma: f, jornada }: { firma: string; jornada?: JornadaKey }) => {
+    if (persistenceBlocked()) return;
+    const requestContext = captureSaveContext();
+    const infoSnapshot = { ...info };
+    persistenceInProgress.current = true;
     setSaving(true);
     try {
       const jornadaKey = (jornada ?? "manana") as JornadaKey;
@@ -497,12 +609,23 @@ export default function TermohigrometriaPage() {
 
       const res = await fetch("/api/termohigrometria", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildSaveBody(lecturasAuditadas, nuevasFirmas, resp || "", f)),
+        body: JSON.stringify(buildSaveBody(requestContext, infoSnapshot, lecturasAuditadas, nuevasFirmas, resp || "", f)),
       });
-      if (!res.ok) throw new Error((await res.json()).error);
-      clearTermohigrometriaDraft(año, mes);
-      showToast("Registro guardado ✓");
+      if (!res.ok) await throwPersistenceError(res, "No se pudo guardar el registro.");
+      const saved = parseSavedRegistro(await res.json());
+      rebaseDraftAfterSave(saved, getCurrentDraft({
+        info: infoSnapshot,
+        firmas: nuevasFirmas,
+        lecturas: lecturasAuditadas,
+        lecturasOriginales: lecturasAuditadas,
+      }), requestContext);
+      if (isCurrentSaveContext({ ...requestContext, expectedUpdatedAt: saved.updated_at })) {
+        showToast("Registro guardado ✓");
+      }
+    } catch (error: unknown) {
+      showToast(getErrorMessage(error, "No se pudo guardar el registro."), "err");
     } finally {
+      persistenceInProgress.current = false;
       setSaving(false);
     }
   };
@@ -531,15 +654,38 @@ export default function TermohigrometriaPage() {
 
   // ── Navegación de mes ──────────────────────────────────────────────────────
   const navMes = (d: number) => {
+    if (persistenceInProgress.current) return;
     setLoading(true);
     let m = mes + d, a = año;
     if (m > 12) { m = 1; a++; }
     if (m < 1)  { m = 12; a--; }
+    const params = new URLSearchParams(window.location.search);
+    params.set("year", String(a));
+    params.set("month", String(m));
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
     setMes(m); setAño(a);
   };
 
   const fcTemp = parseFloat(info.factor_correccion_temp) || 0;
   const fcHum  = parseFloat(info.factor_correccion_hum)  || 0;
+  const persistenceActive = saving || savingConfig;
+  const editsDisabled = loading || persistenceActive || conflictingDraft !== null;
+
+  const recoverConflictingDraft = () => {
+    if (!conflictingDraft) return;
+    setInfo(conflictingDraft.info); setFirmas(conflictingDraft.firmas); setLecturas(conflictingDraft.lecturas);
+    lecturasOriginales.current = conflictingDraft.lecturasOriginales;
+    setJornadaAdd(conflictingDraft.jornadaAdd); setInputDia(conflictingDraft.inputDia);
+    setInputTemp(conflictingDraft.inputTemp); setInputHum(conflictingDraft.inputHum);
+    setTempMin(conflictingDraft.tempMin); setTempMax(conflictingDraft.tempMax);
+    setHumMin(conflictingDraft.humMin); setHumMax(conflictingDraft.humMax);
+    setConflictingDraft(null);
+  };
+
+  const discardConflictingDraft = () => {
+    clearTermohigrometriaDraft(window.localStorage, window.sessionStorage, año, mes);
+    setConflictingDraft(null);
+  };
 
   // ── Datos de prueba con 3 jornadas ────────────────────────────────────────
   const cargarDatosPrueba = () => {
@@ -555,6 +701,14 @@ export default function TermohigrometriaPage() {
     }
     setLecturas(nuevas);
   };
+
+  if (!contextReady) {
+    return (
+      <div className="flex min-h-48 items-center justify-center text-gray-400">
+        <Loader2 size={28} className="mr-2 animate-spin" /> Cargando…
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -579,15 +733,26 @@ export default function TermohigrometriaPage() {
         </div>
       )}
 
+      {conflictingDraft && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 no-print">
+          <p className="font-semibold">Se conservó un borrador basado en una versión anterior.</p>
+          <p className="mt-1">Estás viendo los datos actuales del servidor. Recupera el borrador para revisarlo o descártalo.</p>
+          <div className="mt-3 flex gap-2">
+            <button onClick={recoverConflictingDraft} className="rounded-lg bg-amber-700 px-3 py-1.5 font-semibold text-white">Recuperar borrador</button>
+            <button onClick={discardConflictingDraft} className="rounded-lg border border-amber-400 px-3 py-1.5 font-semibold">Descartar borrador</button>
+          </div>
+        </div>
+      )}
+
       {/* ─── Metadatos ───────────────────────────────────────────────────── */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden text-xs no-print">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 divide-x divide-y divide-gray-200">
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Mes</p>
             <div className="flex items-center gap-1">
-              <button onClick={() => navMes(-1)} className="text-gray-400 hover:text-hsa-green"><ChevronLeft size={12}/></button>
+              <button onClick={() => navMes(-1)} disabled={persistenceActive} className="text-gray-400 hover:text-hsa-green disabled:opacity-40"><ChevronLeft size={12}/></button>
               <span className="font-bold text-hsa-green capitalize text-xs">{MESES[mes-1]}</span>
-              <button onClick={() => navMes(1)} className="text-gray-400 hover:text-hsa-green"><ChevronRight size={12}/></button>
+              <button onClick={() => navMes(1)} disabled={persistenceActive} className="text-gray-400 hover:text-hsa-green disabled:opacity-40"><ChevronRight size={12}/></button>
             </div>
           </div>
           <div className="px-3 py-2">
@@ -597,32 +762,38 @@ export default function TermohigrometriaPage() {
           <div className="px-3 py-2 col-span-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Ubicación</p>
             <input className="w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
+              disabled={editsDisabled}
               value={info.ubicacion} onChange={e => setInfo(i => ({...i, ubicacion: e.target.value}))} placeholder="—"/>
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Dispositivo</p>
             <input className="w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
+              disabled={editsDisabled}
               value={info.dispositivo_nombre} onChange={e => setInfo(i => ({...i, dispositivo_nombre: e.target.value}))} placeholder="—"/>
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Marca</p>
             <input className="w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
+              disabled={editsDisabled}
               value={info.dispositivo_marca} onChange={e => setInfo(i => ({...i, dispositivo_marca: e.target.value}))} placeholder="—"/>
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">Modelo</p>
             <input className="w-full bg-transparent font-medium text-gray-700 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
+              disabled={editsDisabled}
               value={info.dispositivo_modelo} onChange={e => setInfo(i => ({...i, dispositivo_modelo: e.target.value}))} placeholder="—"/>
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">F. Corr. Temp</p>
             <input type="number" step="0.01"
+              disabled={editsDisabled}
               className="w-full bg-transparent font-bold text-hsa-green focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
               value={info.factor_correccion_temp} onChange={e => setInfo(i => ({...i, factor_correccion_temp: e.target.value}))} placeholder="0"/>
           </div>
           <div className="px-3 py-2">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-1 text-[10px]">F. Corr. Hum</p>
             <input type="number" step="0.01"
+              disabled={editsDisabled}
               className="w-full bg-transparent font-bold text-sky-500 focus:outline-none text-xs border-b border-transparent focus:border-gray-300 transition-colors"
               value={info.factor_correccion_hum} onChange={e => setInfo(i => ({...i, factor_correccion_hum: e.target.value}))} placeholder="0"/>
           </div>
@@ -633,18 +804,22 @@ export default function TermohigrometriaPage() {
             <div className="flex items-center gap-1 flex-wrap">
               <span className="text-gray-400 text-[10px] font-semibold uppercase">Temperatura</span>
               <input type="number" step="0.5" className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-hsa-green text-gray-700 font-semibold text-[10px]"
+                disabled={editsDisabled}
                 value={tempMin} onChange={e => setTempMin(parseFloat(e.target.value)||0)}/>
               <span className="text-gray-400 text-[10px]">–</span>
               <input type="number" step="0.5" className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-hsa-green text-gray-700 font-semibold text-[10px]"
+                disabled={editsDisabled}
                 value={tempMax} onChange={e => setTempMax(parseFloat(e.target.value)||0)}/>
               <span className="text-gray-400 text-[10px]">°C</span>
             </div>
             <div className="flex items-center gap-1 flex-wrap">
               <span className="text-gray-400 text-[10px] font-semibold uppercase">Humedad</span>
               <input type="number" step="1" className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-sky-400 text-gray-700 font-semibold text-[10px]"
+                disabled={editsDisabled}
                 value={humMin} onChange={e => setHumMin(parseFloat(e.target.value)||0)}/>
               <span className="text-gray-400 text-[10px]">–</span>
               <input type="number" step="1" className="w-10 text-center bg-transparent border-b border-gray-300 focus:outline-none focus:border-sky-400 text-gray-700 font-semibold text-[10px]"
+                disabled={editsDisabled}
                 value={humMax} onChange={e => setHumMax(parseFloat(e.target.value)||0)}/>
               <span className="text-gray-400 text-[10px]">%</span>
             </div>
@@ -652,15 +827,17 @@ export default function TermohigrometriaPage() {
           <div className="px-3 py-1.5">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-0.5 text-[10px]">Serial</p>
             <input className="w-full bg-transparent text-gray-600 focus:outline-none text-[10px] border-b border-transparent focus:border-gray-300 transition-colors"
+              disabled={editsDisabled}
               value={info.dispositivo_serial} onChange={e => setInfo(i => ({...i, dispositivo_serial: e.target.value}))} placeholder="—"/>
           </div>
           <div className="px-3 py-1.5">
             <p className="text-gray-400 uppercase tracking-wide font-semibold mb-0.5 text-[10px]">Certificado</p>
             <input className="w-full bg-transparent text-gray-600 focus:outline-none text-[10px] border-b border-transparent focus:border-gray-300 transition-colors"
+              disabled={editsDisabled}
               value={info.certificado} onChange={e => setInfo(i => ({...i, certificado: e.target.value}))} placeholder="—"/>
           </div>
           <div className="px-3 py-1.5 flex items-center gap-2 justify-end no-print">
-            <button onClick={cargarDatosPrueba}
+            <button onClick={cargarDatosPrueba} disabled={editsDisabled || loadError !== null}
               className="flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-[11px] font-semibold hover:bg-amber-200 transition-colors">
               🧪 Prueba
             </button>
@@ -669,7 +846,12 @@ export default function TermohigrometriaPage() {
               {exportingPdf ? <Loader2 size={11} className="animate-spin"/> : <FileDown size={11}/>}
               {exportingPdf ? "Generando…" : "Guardar PDF"}
             </button>
-            <button onClick={pedirFirmaMensual} disabled={saving || loading}
+            <button onClick={handleSaveConfig} disabled={persistenceActive || loading || loadError !== null || conflictingDraft !== null}
+              className="flex items-center gap-1 px-3 py-1 bg-emerald-50 text-hsa-green rounded-lg text-[11px] font-semibold hover:bg-emerald-100 transition-colors disabled:opacity-50">
+              {savingConfig ? <Loader2 size={11} className="animate-spin"/> : <CheckCircle size={11}/>}
+              {savingConfig ? "Guardando…" : "Guardar configuración"}
+            </button>
+            <button onClick={pedirFirmaMensual} disabled={persistenceActive || loading || loadError !== null || conflictingDraft !== null}
               className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
               style={{ backgroundColor: "#006b3c" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "#004d2a"; }}
@@ -709,7 +891,7 @@ export default function TermohigrometriaPage() {
                   {JORNADAS.map(j => {
                     const hasResp = responsableDeJornada(j).trim() !== "";
                     return (
-                      <button key={j} onClick={() => setJornadaAdd(j)}
+                      <button key={j} onClick={() => setJornadaAdd(j)} disabled={editsDisabled}
                         className={`flex items-center gap-1 px-3 py-1 rounded-md text-[11px] font-semibold transition-all ${
                           jornadaAdd === j ? "bg-white shadow-sm" : "text-gray-400 hover:text-gray-600"
                         }`}
@@ -732,6 +914,7 @@ export default function TermohigrometriaPage() {
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">Día</span>
                   <input type="number" min={1} max={getDiasEnMes(mes, año)}
+                    disabled={editsDisabled}
                     className="w-12 text-center text-sm font-bold border border-gray-200 rounded-lg px-1 py-1 focus:outline-none focus:ring-2 focus:ring-opacity-30"
                     value={inputDia} onChange={e => setInputDia(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && document.getElementById("temp-in")?.focus()}/>
@@ -739,6 +922,7 @@ export default function TermohigrometriaPage() {
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">Temp °C</span>
                   <input id="temp-in" type="number" step="0.1"
+                    disabled={editsDisabled}
                     className="w-20 text-center text-sm font-bold border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-opacity-30"
                     value={inputTemp} onChange={e => setInputTemp(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && document.getElementById("hum-in")?.focus()}
@@ -747,6 +931,7 @@ export default function TermohigrometriaPage() {
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500">Hum %</span>
                   <input id="hum-in" type="number" step="0.1"
+                    disabled={editsDisabled}
                     className="w-20 text-center text-sm font-bold border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-opacity-30"
                     value={inputHum} onChange={e => setInputHum(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && agregar()}
@@ -757,7 +942,7 @@ export default function TermohigrometriaPage() {
                     → {(parseFloat(inputTemp) + fcTemp).toFixed(1)}°C corregida
                   </span>
                 )}
-                <button onClick={agregar} disabled={!inputTemp}
+                <button onClick={agregar} disabled={!inputTemp || editsDisabled || loadError !== null}
                   className="flex items-center gap-1 px-3 py-1.5 text-white rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
                   style={{ backgroundColor: inputTemp ? J_COLOR[jornadaAdd] : "#9ca3af" }}>
                   <PenLine size={12}/> Confirmar y agregar
@@ -787,6 +972,7 @@ export default function TermohigrometriaPage() {
                       Responsable {J_LABEL[j]}
                     </p>
                     <input
+                      disabled={editsDisabled}
                       className="w-full border-b border-gray-300 focus:outline-none pb-1 text-sm"
                       value={info[campo as keyof typeof info]}
                       onChange={e => setInfo(i => ({...i, [campo]: e.target.value}))}
@@ -801,6 +987,7 @@ export default function TermohigrometriaPage() {
               <div className="px-4 py-3">
                 <p className="text-gray-400 uppercase tracking-wide font-semibold mb-2 text-[10px]">Observaciones</p>
                 <input className="w-full border-b border-gray-300 focus:outline-none focus:border-hsa-green pb-1 text-sm"
+                  disabled={editsDisabled}
                   value={info.observaciones}
                   onChange={e => setInfo(i => ({...i, observaciones: e.target.value}))}
                   placeholder="Novedades del mes…"/>
